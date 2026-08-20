@@ -145,7 +145,7 @@
       <form id="return-form">
 
         <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0;" onclick="toggleDictation()">
-          🎤 Say the whole item (drug, qty, condition, disposition)
+          🎤 Start voice entry (step by step)
         </button>
         <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
         <p id="dictate-unsupported" class="muted" style="display:none;">
@@ -272,7 +272,16 @@
           </select>
 
           <label>Notes <span class="hint">(no patient identifiers)</span></label>
-          <textarea id="notes"></textarea>
+          <div style="display:flex; gap:8px; align-items:flex-start;">
+            <textarea id="notes" style="flex:1;"></textarea>
+            <button type="button" id="notes-dictate-btn" onclick="toggleNotesDictation()"
+              style="white-space:nowrap; background:#7c3aed; color:#fff; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
+              🎤 Dictate
+            </button>
+          </div>
+          <p id="notes-dictate-unsupported" class="muted" style="display:none;">
+            Voice input isn't supported in this browser — type notes manually.
+          </p>
         </details>
 
         <button type="submit" class="submit-btn" id="submit-btn">Save item</button>
@@ -716,6 +725,7 @@
   function toggleDictation() {
     if (!recognition) return;
     if (isListening) { recognition.stop(); return; }
+    if (typeof notesListening !== 'undefined' && notesListening && notesRecognition) { notesListening = false; notesRecognition.stop(); } // don't run both mics at once
     // Resume from the first field that isn't already filled — so a manual
     // edit made before or between voice steps is respected, not overwritten.
     const firstUnfilled = VOICE_STEPS.findIndex(s => !isVoiceStepFilled(s.key));
@@ -841,6 +851,62 @@
       stopDictationUI();
       setDictateStatus(`Heard: "${transcript}" → ${step.key}: ${heardSummary}. All fields done — review and tap Save.`);
     }
+  }
+
+  // ---- Free-text dictation for Notes ----
+  // Separate, independent recognizer from the guided step flow above — this
+  // one just transcribes whatever is said, continuously, straight into the
+  // Notes textarea, for open-ended remarks that don't fit a fixed field.
+  // Same free browser speech-to-text, no AI parsing involved.
+  let notesRecognition = null;
+  let notesListening = false;
+
+  if (!SpeechRecognitionAPI) {
+    const btn = document.getElementById('notes-dictate-btn');
+    if (btn) btn.style.display = 'none';
+    const msgEl = document.getElementById('notes-dictate-unsupported');
+    if (msgEl) msgEl.style.display = 'block';
+  } else {
+    notesRecognition = new SpeechRecognitionAPI();
+    notesRecognition.continuous = true;
+    notesRecognition.interimResults = false;
+    notesRecognition.lang = 'en-MY';
+
+    notesRecognition.onresult = (e) => {
+      const notesEl = document.getElementById('notes');
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const said = e.results[i][0].transcript.trim();
+        if (!said) continue;
+        notesEl.value = notesEl.value ? `${notesEl.value} ${said}` : said;
+      }
+    };
+    notesRecognition.onerror = () => { stopNotesDictationUI(); };
+    notesRecognition.onend = () => {
+      // continuous mode can still end on its own (silence timeout, etc.) —
+      // restart automatically if the user hasn't tapped stop yet
+      if (notesListening) { try { notesRecognition.start(); } catch (err) { stopNotesDictationUI(); } }
+    };
+
+    // Interrupt cleanly if the guided item-flow mic is started, and vice versa.
+    document.getElementById('notes').addEventListener('focus', () => {
+      if (isListening && recognition) recognition.stop();
+    });
+  }
+
+  function toggleNotesDictation() {
+    if (!notesRecognition) return;
+    if (notesListening) { notesListening = false; notesRecognition.stop(); return; }
+    if (isListening && recognition) recognition.stop(); // don't run both mics at once
+    notesListening = true;
+    document.getElementById('notes-dictate-btn').textContent = '🔴 Stop';
+    try { notesRecognition.start(); } catch (err) { stopNotesDictationUI(); }
+  }
+
+  function stopNotesDictationUI() {
+    notesListening = false;
+    const btn = document.getElementById('notes-dictate-btn');
+    if (btn) btn.textContent = '🎤 Dictate';
   }
 
   // ---- Label toggle ----
