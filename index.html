@@ -716,6 +716,26 @@
   // reference to it, which then means onend/onerror never fire and whatever
   // was waiting on them (starting the mic) hangs forever. This is a known
   // real Chrome bug, not a theoretical one.
+
+  // Pick the most natural-sounding available voice instead of the default
+  // robotic OS voice. Browsers load voices asynchronously, so this is
+  // re-run whenever the list changes, not just once at page load.
+  let preferredVoice = null;
+  function pickVoice() {
+    if (!synth) return;
+    const voices = synth.getVoices();
+    if (!voices.length) return;
+    preferredVoice =
+      voices.find(v => /^en/i.test(v.lang) && /Google/i.test(v.name)) ||   // Chrome's network voices — the most natural
+      voices.find(v => /^en/i.test(v.lang) && !v.localService) ||          // any non-robotic network voice
+      voices.find(v => /^en/i.test(v.lang)) ||
+      voices[0];
+  }
+  if (synth) {
+    pickVoice();
+    synth.onvoiceschanged = pickVoice;
+  }
+
   function speak(text, onDone) {
     if (!synth || voiceMode !== 'conversation') { if (onDone) onDone(); return; }
     let done = false;
@@ -724,6 +744,7 @@
       synth.cancel(); // don't let utterances pile up
       currentUtterance = new SpeechSynthesisUtterance(text);
       currentUtterance.rate = 1.02;
+      if (preferredVoice) currentUtterance.voice = preferredVoice;
       currentUtterance.onend = finish;
       currentUtterance.onerror = finish;
       synth.speak(currentUtterance);
@@ -735,7 +756,7 @@
   }
 
   const VOICE_STEPS = [
-    { key: 'drug', label: 'the drug name (or say "unidentified")', question: 'What\'s the drug name? Say unidentified if you can\'t tell.' },
+    { key: 'drug', label: 'the drug name', question: 'What\'s the drug name?' },
     { key: 'quantity', label: 'the quantity', question: 'How many? Just say the number.' },
     { key: 'condition', label: 'the condition — sealed, opened, expired, or damaged', question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
     { key: 'disposition', label: 'the disposition — restock, destroy, redistribute, or pending', question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
@@ -825,7 +846,22 @@
       // isListening may have been cancelled (mic re-tapped, field focused)
       // while the question was being spoken — don't start listening if so.
       if (!isListening) return;
-      try { recognition.start(); } catch (err) { stopDictationUI(); }
+      // Small handoff delay: on some devices the mic and speaker can't be
+      // handed off instantly, and starting recognition the same instant
+      // speech ends can fail silently. Also gives the audio pipeline a
+      // moment to actually release.
+      setTimeout(() => {
+        if (!isListening) return;
+        try {
+          recognition.start();
+        } catch (err) {
+          // Surface the real reason instead of silently going back to
+          // idle — "doesn't listen" is much easier to fix when we know
+          // WHY (e.g. "already started", "not-allowed", permission).
+          setDictateStatus(`Mic didn't start (${err.message || err.name || 'unknown error'}). Tap 🎤 Voice to try again.`);
+          stopDictationUI();
+        }
+      }, 150);
     });
   }
 
