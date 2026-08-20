@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Medication Returns Tracker</title>
+
+<!-- ============================================================
+     CONFIG — edit these two lines before deploying.
+     Get them from Supabase: Project Settings -> API
+     ============================================================ -->
+<script>
+  const SUPABASE_URL = "https://qochmctaqlbigbpqugqv.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvY2htY3RhcWxiaWdicHF1Z3F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDM5MDksImV4cCI6MjEwMjcxOTkwOX0.ucUN6DxJ7xyUmmrg2Up0_ak94jIbRNj0bO8nh06Bw84";
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.45.4/supabase.min.js"></script>
+
+<style>
+  :root {
+    --blue: #2563eb; --blue-dark: #1e40af; --bg: #f5f7fa; --card: #ffffff;
+    --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --danger: #dc2626; --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--blue-dark); color: white; padding: 14px 16px; position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 1.05rem; }
+  header .who { font-size: 0.78rem; opacity: 0.9; text-align: right; cursor: pointer; text-decoration: underline; }
+
+  nav { display: flex; background: white; border-bottom: 1px solid var(--border); position: sticky; top: 50px; z-index: 9; }
+  nav button { flex: 1; padding: 12px 8px; background: none; border: none; font-size: 0.95rem; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; }
+  nav button.active { color: var(--blue-dark); border-bottom-color: var(--blue); font-weight: 600; }
+
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
+  label .hint { font-weight: 400; color: var(--muted); font-size: 0.78rem; }
+  input, select, textarea {
+    width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+  }
+  textarea { resize: vertical; min-height: 50px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }
+
+  .submit-btn { margin-top: 16px; width: 100%; padding: 16px; background: var(--blue); color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+  .submit-btn:disabled { opacity: 0.6; }
+  .submit-btn:active { background: var(--blue-dark); }
+
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 0.9rem; display: none; }
+  .msg.ok { background: #dcfce7; color: #166534; display: block; }
+  .msg.err { background: #fee2e2; color: #991b1b; display: block; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 1.4rem; font-weight: 700; color: var(--blue-dark); }
+  .stat .lbl { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+  tr:last-child td { border-bottom: none; }
+  .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .section-title { font-size: 0.95rem; font-weight: 700; margin: 0 0 10px; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+  .btn-sm { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: white; font-size: 0.82rem; cursor: pointer; color: var(--text); }
+  .btn-sm:hover { background: #f1f5f9; }
+
+  .config-warning { background: #fef3c7; color: #92400e; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 16px; }
+  .muted { color: var(--muted); font-size: 0.8rem; }
+  .empty { color: var(--muted); font-size: 0.85rem; padding: 12px 0; text-align: center; }
+
+  /* Condition tap-buttons */
+  .chip-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chip { padding: 10px 14px; border: 2px solid var(--border); border-radius: 999px; background: white; font-size: 0.88rem; cursor: pointer; }
+  .chip.selected { border-color: var(--blue); background: #eff6ff; color: var(--blue-dark); font-weight: 600; }
+
+  details.optional { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
+  details.optional summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; color: var(--muted); }
+
+  .who-badge { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .who-badge b { color: var(--blue-dark); }
+  .unident-btn { width: 100%; padding: 10px; margin-top: 8px; border: 1px dashed var(--muted); border-radius: 8px; background: #f8fafc; color: var(--muted); font-size: 0.85rem; cursor: pointer; }
+  .unident-btn.active { background: #fef3c7; border-color: #d97706; color: #92400e; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Medication Returns Tracker</h1>
+  <div class="who" id="who-header" onclick="showWhoScreen()">Not signed in</div>
+</header>
+
+<nav>
+  <button id="tab-log-btn" class="active" onclick="showTab('log')">Log an Item</button>
+  <button id="tab-dash-btn" onclick="showTab('dash')">Dashboard</button>
+</nav>
+
+<main>
+  <div id="config-warning" class="config-warning" style="display:none;">
+    ⚠️ Supabase is not configured yet. Edit <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>
+    near the top of this file before this app will save any data.
+  </div>
+
+  <!-- ===================== WHO SCREEN (staff + bin picker) ===================== -->
+  <section id="tab-who" style="display:none;">
+    <div class="card">
+      <div class="section-title">Who's logging, and which bin?</div>
+      <label>Your name</label>
+      <input id="who-staff" list="staff-list" placeholder="Start typing your name…">
+      <datalist id="staff-list"></datalist>
+
+      <label>Bin</label>
+      <select id="who-bin"><option value="">Select your name first…</option></select>
+
+      <button class="submit-btn" onclick="confirmWho()">Start logging</button>
+      <p class="muted" style="margin-top:10px;">Not in the list, or bin missing? Ask whoever manages
+        <code>staff_assignments</code> / <code>bins</code> in Supabase to add you.</p>
+    </div>
+  </section>
+
+  <!-- ===================== LOG TAB ===================== -->
+  <section id="tab-log" style="display:none;">
+    <div class="who-badge">
+      <span>Logging as <b id="who-display">–</b></span>
+      <button class="btn-sm" onclick="showWhoScreen()">Switch</button>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Log an item found in the bin</div>
+
+      <form id="return-form">
+
+        <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0;" onclick="toggleDictation()">
+          🎤 Say the whole item (drug, qty, condition, disposition)
+        </button>
+        <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
+        <p id="dictate-unsupported" class="muted" style="display:none;">
+          Voice input isn't supported in this browser — use the fields below instead.
+        </p>
+
+        <label>Drug <span class="hint">(search list, or mark unidentified below)</span></label>
+        <input id="drug_search" list="drug-list" placeholder="Start typing…" autocomplete="off">
+        <datalist id="drug-list"></datalist>
+        <button type="button" class="unident-btn" id="unident-toggle" onclick="toggleUnidentified()">
+          Can't identify this item — log as unidentified/mixed
+        </button>
+
+        <div id="qty-row" class="row2">
+          <div>
+            <label>Quantity found</label>
+            <input id="quantity" type="number" min="0.01" step="0.01" inputmode="decimal">
+          </div>
+          <div>
+            <label>Unit</label>
+            <input id="unit" type="text" value="unit">
+          </div>
+        </div>
+        <div id="weight-row" style="display:none;">
+          <label>Estimated weight (g) <span class="hint">for a mixed/loose lot you can't count</span></label>
+          <input id="estimated_weight_g" type="number" min="0.1" step="0.1" inputmode="decimal">
+        </div>
+
+        <label>Condition *</label>
+        <div class="chip-group" id="condition-chips">
+          <div class="chip" data-value="Sealed/unopened">Sealed/unopened</div>
+          <div class="chip" data-value="Opened/partially used">Opened/partial</div>
+          <div class="chip" data-value="Expired">Expired</div>
+          <div class="chip" data-value="Damaged/unusable">Damaged</div>
+          <div class="chip" data-value="Unknown">Unknown</div>
+        </div>
+
+        <label>Disposition *</label>
+        <div class="chip-group" id="disposition-chips">
+          <div class="chip" data-value="Restocked to pharmacy">Restocked</div>
+          <div class="chip" data-value="Destroyed/discarded">Destroyed</div>
+          <div class="chip" data-value="Redistributed (e.g. donation programme)">Redistributed</div>
+          <div class="chip" data-value="Pending decision">Pending</div>
+        </div>
+
+        <details class="optional" id="optional-details">
+          <summary>More detail (optional — only fill in if you actually know it)</summary>
+
+          <label>Unit cost (RM) <span class="hint">auto-filled when a drug is matched; edit if needed</span></label>
+          <input id="unit_cost" type="number" min="0" step="0.01" inputmode="decimal">
+
+          <label>Batch no.</label>
+          <input id="batch_no" type="text">
+
+          <label>Expiry date</label>
+          <input id="expiry_date" type="date">
+
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" id="label_present" style="width:auto;">
+            Original pharmacy dispensing label still attached
+          </label>
+          <div id="label-fields" style="display:none;">
+            <div class="row2">
+              <div>
+                <label>Qty dispensed (per label)</label>
+                <input id="qty_dispensed_on_label" type="number" min="0" step="0.01">
+              </div>
+              <div>
+                <label>Date dispensed (per label)</label>
+                <input id="date_dispensed_on_label" type="date">
+              </div>
+            </div>
+            <label>Prescribing clinic/ward on label</label>
+            <input id="dispensing_unit_on_label" type="text">
+          </div>
+
+          <label>Reason for return <span class="hint">(only if actually known — leave blank otherwise)</span></label>
+          <select id="reason">
+            <option value="">Unknown/not stated (default)</option>
+            <option>Noted on attached slip/note: discharged or course finished</option>
+            <option>Noted on attached slip/note: doctor changed medicine</option>
+            <option>Noted on attached slip/note: patient deceased</option>
+            <option>Noted on attached slip/note: other</option>
+            <option>Inferred from item: expired, never opened</option>
+            <option>Inferred from item: unopened, unused</option>
+            <option>Other (see notes)</option>
+          </select>
+
+          <label>Notes <span class="hint">(no patient identifiers)</span></label>
+          <textarea id="notes"></textarea>
+        </details>
+
+        <button type="submit" class="submit-btn" id="submit-btn">Save item</button>
+        <div id="form-msg" class="msg"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================== DASHBOARD TAB ===================== -->
+  <section id="tab-dash" style="display:none;">
+    <div class="stat-grid">
+      <div class="stat"><div class="num" id="stat-count">–</div><div class="lbl">Items logged</div></div>
+      <div class="stat"><div class="num" id="stat-qty">–</div><div class="lbl">Total units returned</div></div>
+      <div class="stat"><div class="num" id="stat-cost">–</div><div class="lbl">Estimated wastage cost (RM)</div></div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><div class="num" id="stat-labelpct">–</div><div class="lbl">Items with label attached</div></div>
+      <div class="stat"><div class="num" id="stat-leftover">–</div><div class="lbl">Avg. leftover rate</div></div>
+      <div class="stat"><div class="num" id="stat-days">–</div><div class="lbl">Avg. days since dispensing</div></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="section-title" style="margin:0;">Top drugs by wastage cost</div>
+        <button class="btn-sm" onclick="exportCSV()">⬇ Export all data (CSV)</button>
+      </div>
+      <table><thead><tr><th>Drug</th><th class="num-cell">Qty</th><th class="num-cell">Cost (RM)</th></tr></thead>
+        <tbody id="tbl-drugs"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">By hospital site</div>
+      <table><thead><tr><th>Site</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
+        <tbody id="tbl-site"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">By bin</div>
+      <table><thead><tr><th>Bin</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
+        <tbody id="tbl-bin"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">By condition</div>
+      <table><thead><tr><th>Condition</th><th class="num-cell">Items</th><th class="num-cell">% of total</th></tr></thead>
+        <tbody id="tbl-condition"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Reason for return (mostly "Unknown" — expected)</div>
+      <table><thead><tr><th>Reason</th><th class="num-cell">Items</th><th class="num-cell">% of total</th></tr></thead>
+        <tbody id="tbl-reasons"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="section-title">By disposition</div>
+      <table><thead><tr><th>Disposition</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
+        <tbody id="tbl-disposition"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="section-title" style="margin:0;">Recent entries</div>
+        <button class="btn-sm" onclick="loadDashboard()">↻ Refresh</button>
+      </div>
+      <table><thead><tr><th>Date</th><th>Site/Bin</th><th>Drug</th><th class="num-cell">Qty</th><th>Condition</th></tr></thead>
+        <tbody id="tbl-recent"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script>
+  let supabase = null;
+  let allRows = [];
+  let drugsList = [];
+  let staffAssignments = [];
+  let currentWho = null; // { staff_name, site_code, bin_number }
+  let selectedCondition = null;
+  let selectedDisposition = null;
+  let isUnidentified = false;
+
+  function configOk() {
+    return SUPABASE_URL && !SUPABASE_URL.startsWith("REPLACE_") &&
+           SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith("REPLACE_");
+  }
+  if (configOk()) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } else {
+    document.getElementById('config-warning').style.display = 'block';
+  }
+
+  // ---- Tabs ----
+  function showTab(tab) {
+    document.getElementById('tab-who').style.display = 'none';
+    document.getElementById('tab-log').style.display = tab === 'log' ? 'block' : 'none';
+    document.getElementById('tab-dash').style.display = tab === 'dash' ? 'block' : 'none';
+    document.getElementById('tab-log-btn').classList.toggle('active', tab === 'log');
+    document.getElementById('tab-dash-btn').classList.toggle('active', tab === 'dash');
+    if (tab === 'dash') loadDashboard();
+  }
+
+  function showWhoScreen() {
+    document.getElementById('tab-log').style.display = 'none';
+    document.getElementById('tab-dash').style.display = 'none';
+    document.getElementById('tab-who').style.display = 'block';
+    document.getElementById('tab-log-btn').classList.remove('active');
+    document.getElementById('tab-dash-btn').classList.remove('active');
+  }
+
+  // ---- Load staff assignments + populate name datalist ----
+  async function loadStaff() {
+    if (!supabase) return;
+    const { data, error } = await supabase.from('staff_assignments').select('staff_name, site_code, bin_number');
+    if (error) { console.error(error); return; }
+    staffAssignments = data;
+    const names = [...new Set(data.map(d => d.staff_name))].sort();
+    const dl = document.getElementById('staff-list');
+    dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
+  }
+
+  document.getElementById('who-staff').addEventListener('input', (e) => {
+    const name = e.target.value.trim();
+    const binSel = document.getElementById('who-bin');
+    const matches = staffAssignments.filter(a => a.staff_name === name);
+    if (!matches.length) {
+      binSel.innerHTML = '<option value="">No assignments found for this name yet</option>';
+      return;
+    }
+    binSel.innerHTML = matches.map(a =>
+      `<option value="${a.site_code}|${a.bin_number}">${a.site_code} — Bin ${a.bin_number}</option>`
+    ).join('');
+    if (matches.length === 1) binSel.value = `${matches[0].site_code}|${matches[0].bin_number}`;
+  });
+
+  function confirmWho() {
+    const staff = document.getElementById('who-staff').value.trim();
+    const binVal = document.getElementById('who-bin').value;
+    if (!staff || !binVal) { alert('Enter your name and pick a bin first.'); return; }
+    const [site_code, bin_number] = binVal.split('|');
+    currentWho = { staff_name: staff, site_code, bin_number: parseInt(bin_number) };
+    try { localStorage.setItem('wastage_who', JSON.stringify(currentWho)); } catch(e) {}
+    document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number}`;
+    document.getElementById('who-display').textContent = `${staff} — ${site_code} Bin ${bin_number}`;
+    showTab('log');
+  }
+
+  function restoreWho() {
+    try {
+      const saved = localStorage.getItem('wastage_who');
+      if (saved) {
+        currentWho = JSON.parse(saved);
+        document.getElementById('who-header').textContent = `${currentWho.staff_name} · ${currentWho.site_code}-${currentWho.bin_number}`;
+        document.getElementById('who-display').textContent = `${currentWho.staff_name} — ${currentWho.site_code} Bin ${currentWho.bin_number}`;
+      }
+    } catch(e) {}
+  }
+
+  // ---- Load drugs master list ----
+  async function loadDrugs() {
+    if (!supabase) return;
+    const { data, error } = await supabase.from('drugs').select('*').order('drug_name');
+    if (error) { console.error(error); return; }
+    drugsList = data;
+    const dl = document.getElementById('drug-list');
+    dl.innerHTML = data.map(d =>
+      `<option value="${escapeHtml(d.drug_name)}${d.strength_form ? ' — ' + escapeHtml(d.strength_form) : ''}">`
+    ).join('');
+  }
+
+  document.getElementById('drug_search').addEventListener('change', (e) => {
+    const val = e.target.value;
+    const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === val);
+    if (match) {
+      document.getElementById('unit').value = match.unit || 'unit';
+      document.getElementById('unit_cost').value = match.unit_cost ?? '';
+    }
+  });
+
+  function toggleUnidentified() {
+    isUnidentified = !isUnidentified;
+    const btn = document.getElementById('unident-toggle');
+    btn.classList.toggle('active', isUnidentified);
+    btn.textContent = isUnidentified ? '✓ Logging as unidentified/mixed — tap to undo' : "Can't identify this item — log as unidentified/mixed";
+    document.getElementById('drug_search').disabled = isUnidentified;
+    document.getElementById('drug_search').style.opacity = isUnidentified ? 0.5 : 1;
+    document.getElementById('weight-row').style.display = isUnidentified ? 'block' : 'none';
+  }
+
+  // ---- Chip selectors ----
+  function setupChips(groupId, setter) {
+    document.getElementById(groupId).addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      [...document.getElementById(groupId).children].forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      setter(chip.dataset.value);
+    });
+  }
+  setupChips('condition-chips', v => selectedCondition = v);
+  setupChips('disposition-chips', v => selectedDisposition = v);
+
+  function selectChip(groupId, value) {
+    const group = document.getElementById(groupId);
+    [...group.children].forEach(c => c.classList.remove('selected'));
+    const chip = [...group.children].find(c => c.dataset.value === value);
+    if (chip) {
+      chip.classList.add('selected');
+      if (groupId === 'condition-chips') selectedCondition = value;
+      if (groupId === 'disposition-chips') selectedDisposition = value;
+      return true;
+    }
+    return false;
+  }
+
+  // ---- Voice dictation ----
+  // Uses the browser's built-in speech-to-text (free, no external service).
+  // The transcript is parsed with plain keyword/number/fuzzy-match rules —
+  // NOT an AI model — so it's free to run but won't handle every phrasing.
+  // Nothing is ever auto-submitted: staff always see what was parsed and
+  // confirm/fix before tapping Save.
+  let recognition = null;
+  let isListening = false;
+
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionAPI) {
+    document.getElementById('dictate-btn').style.display = 'none';
+    document.getElementById('dictate-unsupported').style.display = 'block';
+  } else {
+    recognition = new SpeechRecognitionAPI();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-MY'; // falls back gracefully in browsers that don't support this locale
+
+    recognition.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      parseAndFillTranscript(transcript);
+    };
+    recognition.onerror = (e) => {
+      setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to try again, or fill in the fields manually.');
+      stopDictationUI();
+    };
+    recognition.onend = () => { stopDictationUI(); };
+  }
+
+  function toggleDictation() {
+    if (!recognition) return;
+    if (isListening) { recognition.stop(); return; }
+    isListening = true;
+    document.getElementById('dictate-btn').textContent = '🔴 Listening… tap to stop';
+    setDictateStatus('Listening — say drug, quantity, condition, disposition in any order.');
+    try { recognition.start(); } catch (err) { stopDictationUI(); }
+  }
+
+  function stopDictationUI() {
+    isListening = false;
+    document.getElementById('dictate-btn').textContent = '🎤 Say the whole item (drug, qty, condition, disposition)';
+  }
+
+  function setDictateStatus(text) {
+    const el = document.getElementById('dictate-status');
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+  }
+
+  function levenshtein(a, b) {
+    const m = [];
+    for (let i = 0; i <= b.length; i++) m[i] = [i];
+    for (let j = 0; j <= a.length; j++) m[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        m[i][j] = b.charAt(i-1) === a.charAt(j-1)
+          ? m[i-1][j-1]
+          : Math.min(m[i-1][j-1] + 1, m[i][j-1] + 1, m[i-1][j] + 1);
+      }
+    }
+    return m[b.length][a.length];
+  }
+
+  function bestDrugMatch(transcript) {
+    const t = transcript.toLowerCase();
+    let best = null, bestScore = 0;
+    drugsList.forEach(d => {
+      const name = d.drug_name.toLowerCase();
+      let score = 0;
+      if (t.includes(name)) {
+        score = name.length * 2; // strong signal: exact substring match
+      } else {
+        // fuzzy: compare each transcript word against the drug name
+        const words = t.split(/\s+/);
+        words.forEach(w => {
+          if (w.length < 4) return;
+          const dist = levenshtein(w, name.slice(0, w.length + 2));
+          const sim = 1 - dist / Math.max(w.length, name.length);
+          if (sim > 0.6) score = Math.max(score, sim * name.length);
+        });
+      }
+      if (score > bestScore) { bestScore = score; best = d; }
+    });
+    return bestScore > 2 ? best : null;
+  }
+
+  function parseAndFillTranscript(transcript) {
+    const t = transcript.toLowerCase();
+    const heard = [];
+
+    // unidentified?
+    if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
+      if (!isUnidentified) toggleUnidentified();
+      heard.push('unidentified item');
+    } else {
+      const match = bestDrugMatch(t);
+      if (match) {
+        const label = `${match.drug_name}${match.strength_form ? ' — ' + match.strength_form : ''}`;
+        document.getElementById('drug_search').value = label;
+        document.getElementById('unit').value = match.unit || 'unit';
+        document.getElementById('unit_cost').value = match.unit_cost ?? '';
+        heard.push('drug: ' + match.drug_name);
+      }
+    }
+
+    // quantity — prefer "N tablet/capsule/vial/bottle/piece/pill(s)/unit(s)", else first bare number
+    // not immediately followed by mg/mcg/g/ml (which would be part of a strength, not a count)
+    let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
+    if (!qtyMatch) {
+      const numbers = [...t.matchAll(/(\d+(\.\d+)?)\s*(mg|mcg|g|ml)?\b/g)];
+      const bare = numbers.find(n => !n[3]);
+      if (bare) qtyMatch = bare;
+    }
+    if (qtyMatch) {
+      document.getElementById('quantity').value = qtyMatch[1];
+      heard.push('qty: ' + qtyMatch[1]);
+    }
+
+    // condition — check "sealed/unopened" BEFORE "opened/partial", since the word
+    // "unopened" itself contains "open" and would otherwise be misread as opened
+    if (/expir/.test(t)) { selectChip('condition-chips', 'Expired'); heard.push('condition: expired'); }
+    else if (/damag/.test(t)) { selectChip('condition-chips', 'Damaged/unusable'); heard.push('condition: damaged'); }
+    else if (/seal|unopen/.test(t)) { selectChip('condition-chips', 'Sealed/unopened'); heard.push('condition: sealed'); }
+    else if (/\bopen(ed)?\b|partial/.test(t)) { selectChip('condition-chips', 'Opened/partially used'); heard.push('condition: opened'); }
+
+    // disposition
+    if (/restock/.test(t)) { selectChip('disposition-chips', 'Restocked to pharmacy'); heard.push('disposition: restocked'); }
+    else if (/destroy|discard/.test(t)) { selectChip('disposition-chips', 'Destroyed/discarded'); heard.push('disposition: destroyed'); }
+    else if (/redistribut|donat/.test(t)) { selectChip('disposition-chips', 'Redistributed (e.g. donation programme)'); heard.push('disposition: redistributed'); }
+    else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heard.push('disposition: pending'); }
+
+    const missing = [];
+    if (!isUnidentified && !document.getElementById('drug_search').value) missing.push('drug');
+    if (!document.getElementById('quantity').value && !isUnidentified) missing.push('quantity');
+    if (!selectedCondition) missing.push('condition');
+    if (!selectedDisposition) missing.push('disposition');
+
+    // Always keep the raw transcript as text, in Notes — a safety net so
+    // nothing said is lost even where the parser above guessed wrong or
+    // missed something. Appended, so it doesn't clobber anything staff
+    // already typed by hand.
+    const notesEl = document.getElementById('notes');
+    const voiceLine = `[Voice] ${transcript}`;
+    notesEl.value = notesEl.value ? `${notesEl.value}\n${voiceLine}` : voiceLine;
+    document.getElementById('optional-details').open = true; // reveal it so staff see the saved transcript
+
+    let status = `Heard: "${transcript}" → parsed: ${heard.length ? heard.join(', ') : 'nothing recognized'}. Full text saved to Notes.`;
+    if (missing.length) status += ` Still need: ${missing.join(', ')} — check before saving.`;
+    else status += ' Check the fields below, then tap Save.';
+    setDictateStatus(status);
+  }
+
+  // ---- Label toggle ----
+  document.getElementById('label_present').addEventListener('change', (e) => {
+    document.getElementById('label-fields').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  // ---- Submit ----
+  document.getElementById('return-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('form-msg');
+    const btn = document.getElementById('submit-btn');
+    msg.className = 'msg'; msg.textContent = '';
+
+    if (!supabase) { msg.className = 'msg err'; msg.textContent = 'App is not configured yet.'; return; }
+    if (!currentWho) { msg.className = 'msg err'; msg.textContent = 'Please sign in first (tap the header).'; showWhoScreen(); return; }
+    if (!selectedCondition) { msg.className = 'msg err'; msg.textContent = 'Pick a condition.'; return; }
+    if (!selectedDisposition) { msg.className = 'msg err'; msg.textContent = 'Pick a disposition.'; return; }
+
+    const qty = val('quantity') ? parseFloat(val('quantity')) : null;
+    const weight = val('estimated_weight_g') ? parseFloat(val('estimated_weight_g')) : null;
+    if (!isUnidentified && !qty) { msg.className = 'msg err'; msg.textContent = 'Enter a quantity.'; return; }
+    if (isUnidentified && !qty && !weight) { msg.className = 'msg err'; msg.textContent = 'Enter a quantity or an estimated weight.'; return; }
+
+    const drugVal = val('drug_search');
+    const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === drugVal);
+    const labelPresent = document.getElementById('label_present').checked;
+
+    const payload = {
+      staff_name: currentWho.staff_name,
+      site_code: currentWho.site_code,
+      bin_number: currentWho.bin_number,
+      is_unidentified: isUnidentified,
+      drug_name: isUnidentified ? null : (match ? match.drug_name : (drugVal || null)),
+      strength_form: isUnidentified ? null : (match ? match.strength_form : null),
+      category: isUnidentified ? null : (match ? match.category : null),
+      quantity: qty,
+      estimated_weight_g: weight,
+      unit: val('unit') || 'unit',
+      unit_cost: val('unit_cost') ? parseFloat(val('unit_cost')) : (match ? match.unit_cost : null),
+      batch_no: val('batch_no') || null,
+      expiry_date: val('expiry_date') || null,
+      condition: selectedCondition,
+      disposition: selectedDisposition,
+      label_present: labelPresent,
+      qty_dispensed_on_label: labelPresent && val('qty_dispensed_on_label') ? parseFloat(val('qty_dispensed_on_label')) : null,
+      date_dispensed_on_label: labelPresent && val('date_dispensed_on_label') ? val('date_dispensed_on_label') : null,
+      dispensing_unit_on_label: labelPresent ? (val('dispensing_unit_on_label') || null) : null,
+      reason: val('reason') || null,
+      notes: val('notes') || null
+    };
+
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const { error } = await supabase.from('medication_returns').insert(payload);
+    btn.disabled = false; btn.textContent = 'Save item';
+
+    if (error) {
+      msg.className = 'msg err';
+      msg.textContent = 'Could not save: ' + error.message;
+    } else {
+      msg.className = 'msg ok';
+      msg.textContent = '✓ Saved. Ready for the next item.';
+      resetItemFields();
+    }
+  });
+
+  function resetItemFields() {
+    document.getElementById('drug_search').value = '';
+    document.getElementById('quantity').value = '';
+    document.getElementById('estimated_weight_g').value = '';
+    document.getElementById('unit').value = 'unit';
+    document.getElementById('unit_cost').value = '';
+    document.getElementById('batch_no').value = '';
+    document.getElementById('expiry_date').value = '';
+    document.getElementById('label_present').checked = false;
+    document.getElementById('label-fields').style.display = 'none';
+    document.getElementById('qty_dispensed_on_label').value = '';
+    document.getElementById('date_dispensed_on_label').value = '';
+    document.getElementById('dispensing_unit_on_label').value = '';
+    document.getElementById('reason').value = '';
+    document.getElementById('notes').value = '';
+    [...document.getElementById('condition-chips').children].forEach(c => c.classList.remove('selected'));
+    [...document.getElementById('disposition-chips').children].forEach(c => c.classList.remove('selected'));
+    selectedCondition = null; selectedDisposition = null;
+    if (isUnidentified) toggleUnidentified();
+    setDictateStatus('');
+    document.getElementById('optional-details').open = false;
+    document.getElementById('drug_search').focus();
+  }
+
+  function val(id) { return document.getElementById(id).value.trim(); }
+
+  // ---- Dashboard ----
+  async function loadDashboard() {
+    if (!supabase) return;
+    const { data, error } = await supabase.from('medication_returns').select('*').order('created_at', { ascending: false }).limit(5000);
+    if (error) { console.error(error); return; }
+    allRows = data;
+    renderDashboard(data);
+  }
+
+  function fmtMoney(n) { return n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  function renderDashboard(rows) {
+    document.getElementById('stat-count').textContent = rows.length;
+    const totalQty = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const totalCost = rows.reduce((s, r) => s + Number(r.total_cost || 0), 0);
+    document.getElementById('stat-qty').textContent = totalQty.toLocaleString();
+    document.getElementById('stat-cost').textContent = fmtMoney(totalCost);
+
+    const labeled = rows.filter(r => r.label_present);
+    document.getElementById('stat-labelpct').textContent = rows.length ? (labeled.length / rows.length * 100).toFixed(0) + '%' : '–';
+
+    const withQty = labeled.filter(r => r.qty_dispensed_on_label > 0 && r.quantity);
+    const rates = withQty.map(r => Number(r.quantity) / Number(r.qty_dispensed_on_label));
+    document.getElementById('stat-leftover').textContent = rates.length ? (rates.reduce((a,b)=>a+b,0)/rates.length*100).toFixed(0) + '%' : '–';
+
+    const withDate = labeled.filter(r => r.date_dispensed_on_label);
+    const days = withDate.map(r => Math.max(0, Math.round((new Date(r.collection_date) - new Date(r.date_dispensed_on_label)) / 86400000)));
+    document.getElementById('stat-days').textContent = days.length ? Math.round(days.reduce((a,b)=>a+b,0)/days.length) : '–';
+
+    renderGroupTable(rows.map(r => ({...r, drug_name: r.is_unidentified ? 'Unidentified/mixed' : (r.drug_name || 'Unspecified')})),
+      'drug_name', 'tbl-drugs', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.reduce((s,r)=>s+Number(r.quantity||0),0).toLocaleString()}</td>
+      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
+      (a,b) => b.cost - a.cost, 15);
+
+    renderGroupTable(rows, 'site_code', 'tbl-site', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.length}</td>
+      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
+      null, 20);
+
+    renderGroupTable(rows.map(r => ({...r, bin_label: `${r.site_code}-${r.bin_number}`})), 'bin_label', 'tbl-bin', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.length}</td>
+      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
+      null, 50);
+
+    const total = rows.length || 1;
+    renderGroupTable(rows, 'condition', 'tbl-condition', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.length}</td>
+      <td class="num-cell">${(group.length/total*100).toFixed(1)}%</td></tr>`,
+      null, 50);
+
+    renderGroupTable(rows.map(r => ({...r, reason: r.reason || 'Unknown/not stated'})), 'reason', 'tbl-reasons', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.length}</td>
+      <td class="num-cell">${(group.length/total*100).toFixed(1)}%</td></tr>`,
+      null, 50);
+
+    renderGroupTable(rows, 'disposition', 'tbl-disposition', (name, group) => `
+      <tr><td>${escapeHtml(name)}</td>
+      <td class="num-cell">${group.length}</td>
+      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
+      null, 50);
+
+    const recentBody = document.getElementById('tbl-recent');
+    recentBody.innerHTML = rows.slice(0, 20).map(r => `
+      <tr>
+        <td>${new Date(r.collection_date || r.created_at).toLocaleDateString('en-MY')}</td>
+        <td>${escapeHtml(r.site_code)}-${r.bin_number}</td>
+        <td>${escapeHtml(r.is_unidentified ? 'Unidentified/mixed' : (r.drug_name || '–'))}</td>
+        <td class="num-cell">${r.quantity ?? (r.estimated_weight_g ? r.estimated_weight_g + 'g' : '–')}</td>
+        <td>${escapeHtml(r.condition)}</td>
+      </tr>`).join('') || `<tr><td colspan="5" class="empty">No entries yet</td></tr>`;
+  }
+
+  function renderGroupTable(rows, key, tbodyId, rowHtmlFn, sortFn, limit) {
+    const groups = {};
+    rows.forEach(r => { const k = r[key] || 'Unspecified'; (groups[k] = groups[k] || []).push(r); });
+    let entries = Object.entries(groups).map(([name, group]) => ({ name, group, cost: group.reduce((s,r)=>s+Number(r.total_cost||0),0) }));
+    entries.sort(sortFn || ((a,b) => b.cost - a.cost));
+    entries = entries.slice(0, limit);
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = entries.map(e => rowHtmlFn(e.name, e.group)).join('') || `<tr><td colspan="3" class="empty">No entries yet</td></tr>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function exportCSV() {
+    if (!allRows.length) { alert('No data loaded yet — open the Dashboard tab first.'); return; }
+    const cols = Object.keys(allRows[0]);
+    const lines = [cols.join(',')];
+    allRows.forEach(r => {
+      lines.push(cols.map(c => {
+        let v = r[c] ?? '';
+        v = String(v).replace(/"/g, '""');
+        return /[",\n]/.test(v) ? `"${v}"` : v;
+      }).join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `medication_returns.csv`;
+    a.click();
+  }
+
+  // ---- Init ----
+  (async function init() {
+    await Promise.all([loadStaff(), loadDrugs()]);
+    restoreWho();
+    if (currentWho) { showTab('log'); } else { showWhoScreen(); }
+  })();
+</script>
+
+</body>
+</html>
