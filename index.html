@@ -304,7 +304,9 @@
 </main>
 
 <script>
-  let supabase = null;
+  let sb = null; // renamed from "supabase" — that name is now taken by the
+                 // library's own global object (window.supabase), and
+                 // redeclaring it crashes the whole script on load
   let allRows = [];
   let drugsList = [];
   let currentWho = null; // { staff_name, site_code, bin_number }
@@ -317,7 +319,7 @@
            SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith("REPLACE_");
   }
   if (configOk()) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   } else {
     document.getElementById('config-warning').style.display = 'block';
   }
@@ -347,8 +349,8 @@
   let binsList = [];
 
   async function loadStaff() {
-    if (!supabase) return;
-    const { data, error } = await supabase.from('medication_returns').select('staff_name').limit(500);
+    if (!sb) return;
+    const { data, error } = await sb.from('medication_returns').select('staff_name').limit(500);
     if (error) { console.error(error); return; }
     const names = [...new Set(data.map(d => d.staff_name).filter(Boolean))].sort();
     const dl = document.getElementById('staff-list');
@@ -356,10 +358,10 @@
   }
 
   async function loadSitesAndBins() {
-    if (!supabase) return;
+    if (!sb) return;
     const [sitesRes, binsRes] = await Promise.all([
-      supabase.from('sites').select('*').order('code'),
-      supabase.from('bins').select('*').order('bin_number')
+      sb.from('sites').select('*').order('code'),
+      sb.from('bins').select('*').order('bin_number')
     ]);
     if (sitesRes.error) { console.error(sitesRes.error); return; }
     if (binsRes.error) { console.error(binsRes.error); return; }
@@ -403,8 +405,8 @@
 
   // ---- Load drugs master list ----
   async function loadDrugs() {
-    if (!supabase) return;
-    const { data, error } = await supabase.from('drugs').select('*').order('drug_name');
+    if (!sb) return;
+    const { data, error } = await sb.from('drugs').select('*').order('drug_name');
     if (error) { console.error(error); return; }
     drugsList = data;
     const dl = document.getElementById('drug-list');
@@ -623,7 +625,7 @@
     const btn = document.getElementById('submit-btn');
     msg.className = 'msg'; msg.textContent = '';
 
-    if (!supabase) { msg.className = 'msg err'; msg.textContent = 'App is not configured yet.'; return; }
+    if (!sb) { msg.className = 'msg err'; msg.textContent = 'App is not configured yet.'; return; }
     if (!currentWho) { msg.className = 'msg err'; msg.textContent = 'Please sign in first (tap the header).'; showWhoScreen(); return; }
     if (!selectedCondition) { msg.className = 'msg err'; msg.textContent = 'Pick a condition.'; return; }
     if (!selectedDisposition) { msg.className = 'msg err'; msg.textContent = 'Pick a disposition.'; return; }
@@ -662,7 +664,7 @@
     };
 
     btn.disabled = true; btn.textContent = 'Saving…';
-    const { error } = await supabase.from('medication_returns').insert(payload);
+    const { error } = await sb.from('medication_returns').insert(payload);
     btn.disabled = false; btn.textContent = 'Save item';
 
     if (error) {
@@ -703,8 +705,8 @@
 
   // ---- Dashboard ----
   async function loadDashboard() {
-    if (!supabase) return;
-    const { data, error } = await supabase.from('medication_returns').select('*').order('created_at', { ascending: false }).limit(5000);
+    if (!sb) return;
+    const { data, error } = await sb.from('medication_returns').select('*').order('created_at', { ascending: false }).limit(5000);
     if (error) { console.error(error); return; }
     allRows = data;
     renderDashboard(data);
