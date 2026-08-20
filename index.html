@@ -110,15 +110,21 @@
     <div class="card">
       <div class="section-title">Who's logging, and which bin?</div>
       <label>Your name</label>
-      <input id="who-staff" list="staff-list" placeholder="Start typing your name…">
+      <input id="who-staff" list="staff-list" placeholder="Type your name…">
       <datalist id="staff-list"></datalist>
 
-      <label>Bin</label>
-      <select id="who-bin"><option value="">Select your name first…</option></select>
+      <div class="row2">
+        <div>
+          <label>Hospital site</label>
+          <select id="who-site"><option value="">Select…</option></select>
+        </div>
+        <div>
+          <label>Bin number</label>
+          <select id="who-bin"><option value="">Select site first…</option></select>
+        </div>
+      </div>
 
       <button class="submit-btn" onclick="confirmWho()">Start logging</button>
-      <p class="muted" style="margin-top:10px;">Not in the list, or bin missing? Ask whoever manages
-        <code>staff_assignments</code> / <code>bins</code> in Supabase to add you.</p>
     </div>
   </section>
 
@@ -301,7 +307,6 @@
   let supabase = null;
   let allRows = [];
   let drugsList = [];
-  let staffAssignments = [];
   let currentWho = null; // { staff_name, site_code, bin_number }
   let selectedCondition = null;
   let selectedDisposition = null;
@@ -335,36 +340,49 @@
     document.getElementById('tab-dash-btn').classList.remove('active');
   }
 
-  // ---- Load staff assignments + populate name datalist ----
+  // ---- No pre-registration needed: name is free text (auto-suggested from
+  // past entries), site/bin are freely picked from the sites/bins tables.
+  // Nothing here restricts who can log to which bin — deliberately low
+  // friction, per the call to not bother with real access control.
+  let binsList = [];
+
   async function loadStaff() {
     if (!supabase) return;
-    const { data, error } = await supabase.from('staff_assignments').select('staff_name, site_code, bin_number');
+    const { data, error } = await supabase.from('medication_returns').select('staff_name').limit(500);
     if (error) { console.error(error); return; }
-    staffAssignments = data;
-    const names = [...new Set(data.map(d => d.staff_name))].sort();
+    const names = [...new Set(data.map(d => d.staff_name).filter(Boolean))].sort();
     const dl = document.getElementById('staff-list');
     dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
   }
 
-  document.getElementById('who-staff').addEventListener('input', (e) => {
-    const name = e.target.value.trim();
+  async function loadSitesAndBins() {
+    if (!supabase) return;
+    const [sitesRes, binsRes] = await Promise.all([
+      supabase.from('sites').select('*').order('code'),
+      supabase.from('bins').select('*').order('bin_number')
+    ]);
+    if (sitesRes.error) { console.error(sitesRes.error); return; }
+    if (binsRes.error) { console.error(binsRes.error); return; }
+    binsList = binsRes.data;
+    const siteSel = document.getElementById('who-site');
+    siteSel.innerHTML = '<option value="">Select…</option>' +
+      sitesRes.data.map(s => `<option value="${s.code}">${escapeHtml(s.name)} (${s.code})</option>`).join('');
+  }
+
+  document.getElementById('who-site').addEventListener('change', (e) => {
+    const site = e.target.value;
     const binSel = document.getElementById('who-bin');
-    const matches = staffAssignments.filter(a => a.staff_name === name);
-    if (!matches.length) {
-      binSel.innerHTML = '<option value="">No assignments found for this name yet</option>';
-      return;
-    }
-    binSel.innerHTML = matches.map(a =>
-      `<option value="${a.site_code}|${a.bin_number}">${a.site_code} — Bin ${a.bin_number}</option>`
-    ).join('');
-    if (matches.length === 1) binSel.value = `${matches[0].site_code}|${matches[0].bin_number}`;
+    const matches = binsList.filter(b => b.site_code === site);
+    binSel.innerHTML = matches.length
+      ? matches.map(b => `<option value="${b.bin_number}">Bin ${b.bin_number}${b.label ? ' — ' + escapeHtml(b.label) : ''}</option>`).join('')
+      : '<option value="">No bins found for this site</option>';
   });
 
   function confirmWho() {
     const staff = document.getElementById('who-staff').value.trim();
-    const binVal = document.getElementById('who-bin').value;
-    if (!staff || !binVal) { alert('Enter your name and pick a bin first.'); return; }
-    const [site_code, bin_number] = binVal.split('|');
+    const site_code = document.getElementById('who-site').value;
+    const bin_number = document.getElementById('who-bin').value;
+    if (!staff || !site_code || !bin_number) { alert('Enter your name and pick a site and bin.'); return; }
     currentWho = { staff_name: staff, site_code, bin_number: parseInt(bin_number) };
     try { localStorage.setItem('wastage_who', JSON.stringify(currentWho)); } catch(e) {}
     document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number}`;
@@ -795,7 +813,7 @@
 
   // ---- Init ----
   (async function init() {
-    await Promise.all([loadStaff(), loadDrugs()]);
+    await Promise.all([loadStaff(), loadDrugs(), loadSitesAndBins()]);
     restoreWho();
     if (currentWho) { showTab('log'); } else { showWhoScreen(); }
   })();
