@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -69,6 +69,10 @@
   .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
   .btn-sm { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: white; font-size: 0.82rem; cursor: pointer; color: var(--text); }
   .btn-sm:hover { background: #f1f5f9; }
+  .mic-btn { flex-shrink: 0; width: 40px; height: 40px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .mic-btn.listening { background: #dc2626; }
+  .mic-row { display: flex; gap: 8px; align-items: center; }
+  .mic-row > *:first-child { flex: 1; }
 
   .config-warning { background: #fef3c7; color: #92400e; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 16px; }
   .muted { color: var(--muted); font-size: 0.8rem; }
@@ -144,29 +148,17 @@
 
       <form id="return-form">
 
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0; flex:1;" onclick="toggleDictation()">
-            🎤 Voice
-          </button>
-          <select id="voice-mode" style="font-size:0.9em; padding:8px;">
-            <option value="conversation">1. Conversation</option>
-            <option value="confirm">2. Confirm</option>
-            <option value="silent">3. Silent</option>
-          </select>
-        </div>
-        <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
+        <div id="dictate-status" class="muted" style="margin-top:0; display:none;"></div>
         <div id="voice-live-transcript" style="display:none; margin-top:4px; font-style:italic; color:#7c3aed; min-height:1.2em;"></div>
-        <div id="voice-confirm-chip" style="display:none; margin-top:6px;">
-          <button type="button" id="voice-confirm-btn" style="background:#16a34a; color:#fff; border:none; border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.9em;">
-            ✓ Sounds right — next
-          </button>
-        </div>
         <p id="dictate-unsupported" class="muted" style="display:none;">
           Voice input isn't supported in this browser — use the fields below instead.
         </p>
 
         <label>Drug <span class="hint">(search list, scan barcode, or mark unidentified below)</span></label>
-        <input id="drug_search" list="drug-list" placeholder="Start typing…" autocomplete="off">
+        <div class="mic-row">
+          <input id="drug_search" list="drug-list" placeholder="Start typing…" autocomplete="off">
+          <button type="button" class="mic-btn" id="mic-drug" onclick="dictateField('drug')" title="Dictate drug name">🎤</button>
+        </div>
         <datalist id="drug-list"></datalist>
         <button type="button" class="btn-sm" id="scan-btn" style="width:100%; padding:10px; margin-top:8px;" onclick="openScanner()">
           📷 Scan barcode
@@ -182,7 +174,10 @@
         <div id="qty-row" class="row2">
           <div>
             <label>Quantity found</label>
-            <input id="quantity" type="number" min="0.01" step="0.01" inputmode="decimal">
+            <div class="mic-row">
+              <input id="quantity" type="number" min="0.01" step="0.01" inputmode="decimal">
+              <button type="button" class="mic-btn" id="mic-quantity" onclick="dictateField('quantity')" title="Dictate quantity">🎤</button>
+            </div>
           </div>
           <div>
             <label>Unit</label>
@@ -214,7 +209,10 @@
           <input id="estimated_weight_g" type="number" min="0.1" step="0.1" inputmode="decimal">
         </div>
 
-        <label>Condition *</label>
+        <div class="mic-row">
+          <label style="margin:0;">Condition *</label>
+          <button type="button" class="mic-btn" id="mic-condition" onclick="dictateField('condition')" title="Dictate condition">🎤</button>
+        </div>
         <div class="chip-group" id="condition-chips">
           <div class="chip" data-value="Sealed/unopened">Sealed/unopened</div>
           <div class="chip" data-value="Opened/partially used">Opened/partial</div>
@@ -223,7 +221,10 @@
           <div class="chip" data-value="Unknown">Unknown</div>
         </div>
 
-        <label>Disposition *</label>
+        <div class="mic-row">
+          <label style="margin:0;">Disposition *</label>
+          <button type="button" class="mic-btn" id="mic-disposition" onclick="dictateField('disposition')" title="Dictate disposition">🎤</button>
+        </div>
         <div class="chip-group" id="disposition-chips">
           <div class="chip" data-value="Restocked to pharmacy">Restocked</div>
           <div class="chip" data-value="Destroyed/discarded">Destroyed</div>
@@ -678,44 +679,28 @@
     return false;
   }
 
-  // ---- Voice dictation: step-by-step, following the form ----
-  // Say one thing at a time — drug, then quantity, then condition, then
-  // disposition — the app fills each field and automatically moves to the
-  // next. Tap directly into any field at any point to edit it manually;
-  // that field is then treated as done and skipped if voice is restarted.
-  // Uses the browser's free built-in speech-to-text (and speech-to-text's
-  // free sibling, speech synthesis, for "Conversation" mode) — not an AI
-  // model. Each step only needs to recognize ONE thing, which is far more
-  // reliable than parsing a whole freeform sentence at once, and the
-  // "conversation" is a fixed script (the app always asks the same 4
-  // questions in order), not a model that understands free-form replies.
+  // ---- Voice dictation: one mic per field ----
+  // Every voice-able field (drug, quantity, condition, disposition) has its
+  // own 🎤 button right next to it. Tap it: the app asks that one question
+  // out loud, listens, and fills just that field — no multi-step chain, no
+  // mode picker. This exists because the old single "start the whole flow"
+  // button was unreliable about actually opening the mic on some devices —
+  // starting recognition directly inside each tap's own click handler (the
+  // most gesture-compliant way to call the Web Speech API) is far more
+  // dependable than chaining it behind a "the question finished speaking"
+  // callback. Uses the browser's free built-in speech-to-text and speech
+  // synthesis — not an AI model; each tap only recognizes ONE fixed type of
+  // answer (a drug name, a number, a condition word, a disposition word).
   let recognition = null;
   let isListening = false;
-  let voiceStepIndex = 0;
-  let pendingAdvanceTimer = null;
-
-  // Three selectable voice modes (see the voice-mode dropdown):
-  // - 'conversation' (default): app speaks each question aloud (TTS), then
-  //   listens, then briefly confirms aloud what it heard before moving on.
-  // - 'confirm': no speech output, but shows a "sounds right — next" chip
-  //   staff can tap to advance immediately instead of waiting.
-  // - 'silent': the original behavior — no chip, just auto-advances.
-  let voiceMode = localStorage.getItem('wastage_voice_mode') || 'conversation';
-  const voiceModeSelect = document.getElementById('voice-mode');
-  if (voiceModeSelect) {
-    voiceModeSelect.value = voiceMode;
-    voiceModeSelect.addEventListener('change', (e) => {
-      voiceMode = e.target.value;
-      localStorage.setItem('wastage_voice_mode', voiceMode);
-    });
-  }
+  let activeFieldKey = null;
 
   const synth = window.speechSynthesis || null;
   let currentUtterance = null; // kept as a live reference — Chrome can silently
   // garbage-collect a SpeechSynthesisUtterance mid-speech if nothing holds a
-  // reference to it, which then means onend/onerror never fire and whatever
-  // was waiting on them (starting the mic) hangs forever. This is a known
-  // real Chrome bug, not a theoretical one.
+  // reference to it, which then means onend/onerror never fire. Known real
+  // Chrome bug, not theoretical — but no longer matters much here since
+  // starting the mic no longer waits on speech finishing (see below).
 
   // Pick the most natural-sounding available voice instead of the default
   // robotic OS voice. Browsers load voices asynchronously, so this is
@@ -736,37 +721,34 @@
     synth.onvoiceschanged = pickVoice;
   }
 
-  function speak(text, onDone) {
-    if (!synth || voiceMode !== 'conversation') { if (onDone) onDone(); return; }
-    let done = false;
-    const finish = () => { if (done) return; done = true; if (onDone) onDone(); };
+  function speak(text) {
+    // Fire-and-forget — plays alongside listening, doesn't gate it. See
+    // dictateField() for why: waiting for speech to finish before starting
+    // the mic was the reason the mic sometimes never started at all.
+    if (!synth) return;
     try {
-      synth.cancel(); // don't let utterances pile up
+      synth.cancel();
       currentUtterance = new SpeechSynthesisUtterance(text);
       currentUtterance.rate = 1.02;
       if (preferredVoice) currentUtterance.voice = preferredVoice;
-      currentUtterance.onend = finish;
-      currentUtterance.onerror = finish;
       synth.speak(currentUtterance);
-      // Safety net: some browsers/devices silently fail to ever fire
-      // onend/onerror. Don't let a broken TTS call block the mic forever —
-      // fall through to listening after a generous timeout either way.
-      setTimeout(finish, Math.max(2500, text.length * 90));
-    } catch (err) { finish(); }
+    } catch (err) { /* non-critical — recognition still runs without it */ }
   }
 
-  const VOICE_STEPS = [
-    { key: 'drug', label: 'the drug name', question: 'What\'s the drug name?' },
-    { key: 'quantity', label: 'the quantity', question: 'How many? Just say the number.' },
-    { key: 'condition', label: 'the condition — sealed, opened, expired, or damaged', question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
-    { key: 'disposition', label: 'the disposition — restock, destroy, redistribute, or pending', question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
-  ];
+  const FIELD_CONFIG = {
+    drug: { question: 'What\'s the drug name?' },
+    quantity: { question: 'How many? Just say the number.' },
+    condition: { question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
+    disposition: { question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
+  };
 
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionAPI) {
-    document.getElementById('dictate-btn').style.display = 'none';
+    ['mic-drug', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
     document.getElementById('dictate-unsupported').style.display = 'block';
-    if (voiceModeSelect) voiceModeSelect.style.display = 'none';
   } else {
     recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
@@ -774,101 +756,70 @@
     recognition.lang = 'en-MY'; // falls back gracefully in browsers that don't support this locale
 
     recognition.onstart = () => {
-      // Recognition has actually opened the mic now — this is the true
-      // "listening" moment, separate from the button text set earlier
-      // (which just means "waiting for the question to finish").
-      const step = VOICE_STEPS[voiceStepIndex];
-      document.getElementById('dictate-btn').textContent = `🔴 Listening… tap to stop`;
+      isListening = true;
+      setFieldMicUI(activeFieldKey, true);
       showLiveTranscript('…');
     };
     recognition.onresult = (e) => {
+      // Ignore audio picked up while the question is still being read out
+      // loud — otherwise the app can hear its own voice as the answer.
+      if (synth && synth.speaking) return;
       let interim = '', final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) final += e.results[i][0].transcript;
         else interim += e.results[i][0].transcript;
       }
       if (interim) showLiveTranscript(interim);
-      if (final) { showLiveTranscript(final); handleVoiceStepResult(final); }
+      if (final) { showLiveTranscript(final); handleFieldResult(final); }
     };
     recognition.onerror = (e) => {
-      setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to retry this field, or fill it in manually.');
+      setDictateStatus(`Mic error (${e.error}). Tap the 🎤 to try again.`);
       hideLiveTranscript();
-      stopDictationUI();
+      stopListeningUI();
     };
-    recognition.onend = () => { isListening = false; document.getElementById('dictate-btn').textContent = '🎤 Voice'; };
+    recognition.onend = () => { stopListeningUI(); };
 
-    // If staff tap directly into a field while voice is listening (or while
-    // waiting to auto-advance), stop and cancel the wait — a manual edit
-    // always wins over whatever voice was about to do.
+    // Tapping directly into a field while its mic is listening always wins
+    // — stop and let the manual edit stand.
     ['drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
+      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); });
     });
-    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
-    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
+    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
+    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
   }
 
-  function isVoiceStepFilled(stepKey) {
-    switch (stepKey) {
-      case 'drug': return isUnidentified || !!document.getElementById('drug_search').value.trim();
-      case 'quantity': return isUnidentified
-        ? !!(document.getElementById('quantity').value || document.getElementById('estimated_weight_g').value)
-        : !!document.getElementById('quantity').value;
-      case 'condition': return !!selectedCondition;
-      case 'disposition': return !!selectedDisposition;
-      default: return false;
-    }
+  function setFieldMicUI(fieldKey, on) {
+    ['mic-drug', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const isThis = id === `mic-${fieldKey}`;
+      el.classList.toggle('listening', on && isThis);
+      el.textContent = on && isThis ? '🔴' : '🎤';
+    });
   }
 
-  function toggleDictation() {
+  function stopListeningUI() {
+    isListening = false;
+    setFieldMicUI(activeFieldKey, false);
+    hideLiveTranscript();
+  }
+
+  function dictateField(fieldKey) {
     if (!recognition) return;
-    if (isListening) { recognition.stop(); if (synth) synth.cancel(); cancelPendingAdvance(); stopDictationUI(); return; }
+    if (isListening && activeFieldKey === fieldKey) { recognition.stop(); return; } // tap again to cancel
+    if (isListening) recognition.stop(); // switch fields
     if (typeof notesListening !== 'undefined' && notesListening && notesRecognition) { notesListening = false; notesRecognition.stop(); } // don't run both mics at once
-    // Resume from the first field that isn't already filled — so a manual
-    // edit made before or between voice steps is respected, not overwritten.
-    const firstUnfilled = VOICE_STEPS.findIndex(s => !isVoiceStepFilled(s.key));
-    if (firstUnfilled === -1) {
-      setDictateStatus('Everything is already filled in — review and tap Save.');
+    activeFieldKey = fieldKey;
+    const cfg = FIELD_CONFIG[fieldKey];
+    setDictateStatus(`🔊 ${cfg.question}`);
+    try {
+      recognition.start(); // synchronous, inside the tap's own click handler — the most gesture-compliant way to open the mic
+    } catch (err) {
+      setDictateStatus(`Mic didn't start (${err.message || err.name || 'unknown error'}). Tap the 🎤 again.`);
       return;
     }
-    voiceStepIndex = firstUnfilled;
-    listenForCurrentStep();
-  }
-
-  function listenForCurrentStep() {
-    const step = VOICE_STEPS[voiceStepIndex];
-    hideVoiceConfirmChip();
-    hideLiveTranscript();
-    isListening = true;
-    document.getElementById('dictate-btn').textContent = `⏳ ${step.label}…`; // not listening yet — waiting on the question / setup
-    setDictateStatus(voiceMode === 'conversation' ? `🔊 ${step.question}` : `🎤 Say ${step.label}.`);
-    speak(step.question, () => {
-      // isListening may have been cancelled (mic re-tapped, field focused)
-      // while the question was being spoken — don't start listening if so.
-      if (!isListening) return;
-      // Small handoff delay: on some devices the mic and speaker can't be
-      // handed off instantly, and starting recognition the same instant
-      // speech ends can fail silently. Also gives the audio pipeline a
-      // moment to actually release.
-      setTimeout(() => {
-        if (!isListening) return;
-        try {
-          recognition.start();
-        } catch (err) {
-          // Surface the real reason instead of silently going back to
-          // idle — "doesn't listen" is much easier to fix when we know
-          // WHY (e.g. "already started", "not-allowed", permission).
-          setDictateStatus(`Mic didn't start (${err.message || err.name || 'unknown error'}). Tap 🎤 Voice to try again.`);
-          stopDictationUI();
-        }
-      }, 150);
-    });
-  }
-
-  function stopDictationUI() {
-    isListening = false;
-    hideLiveTranscript();
-    document.getElementById('dictate-btn').textContent = '🎤 Voice';
+    speak(cfg.question); // plays alongside listening, doesn't block it
   }
 
   function showLiveTranscript(text) {
@@ -881,26 +832,6 @@
   function hideLiveTranscript() {
     const el = document.getElementById('voice-live-transcript');
     if (el) el.style.display = 'none';
-  }
-
-  function cancelPendingAdvance() {
-    if (pendingAdvanceTimer) { clearTimeout(pendingAdvanceTimer); pendingAdvanceTimer = null; }
-    hideVoiceConfirmChip();
-  }
-
-  function hideVoiceConfirmChip() {
-    const chip = document.getElementById('voice-confirm-chip');
-    if (chip) chip.style.display = 'none';
-    const btn = document.getElementById('voice-confirm-btn');
-    if (btn) btn.onclick = null;
-  }
-
-  function showVoiceConfirmChip(onConfirm) {
-    const chip = document.getElementById('voice-confirm-chip');
-    const btn = document.getElementById('voice-confirm-btn');
-    if (!chip || !btn) return;
-    chip.style.display = 'block';
-    btn.onclick = () => { cancelPendingAdvance(); onConfirm(); };
   }
 
   function setDictateStatus(text) {
@@ -955,13 +886,13 @@
     document.getElementById('optional-details').open = true; // reveal it so staff can see it landed there
   }
 
-  function handleVoiceStepResult(transcript) {
-    const step = VOICE_STEPS[voiceStepIndex];
+  function handleFieldResult(transcript) {
+    const fieldKey = activeFieldKey;
     const t = transcript.toLowerCase();
-    logVoiceLine(step.key, transcript);
+    logVoiceLine(fieldKey, transcript);
     let heardSummary = 'not recognized — check/edit this field manually';
 
-    if (step.key === 'drug') {
+    if (fieldKey === 'drug') {
       if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
         if (!isUnidentified) toggleUnidentified();
         heardSummary = 'marked unidentified';
@@ -970,7 +901,7 @@
         if (match) { applyDrugMatch(match); heardSummary = match.drug_name; }
         else { document.getElementById('drug_search').value = transcript; heardSummary = `"${transcript}" (no match — typed as-is, edit if wrong)`; }
       }
-    } else if (step.key === 'quantity') {
+    } else if (fieldKey === 'quantity') {
       let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
       if (!qtyMatch) {
         const numbers = [...t.matchAll(/(\d+(\.\d+)?)\s*(mg|mcg|g|ml)?\b/g)];
@@ -978,52 +909,21 @@
         if (bare) qtyMatch = bare;
       }
       if (qtyMatch) { document.getElementById('quantity').value = qtyMatch[1]; heardSummary = qtyMatch[1]; }
-    } else if (step.key === 'condition') {
+    } else if (fieldKey === 'condition') {
       // "sealed/unopened" checked BEFORE "opened/partial" — "unopened" itself
       // contains "open" and would otherwise be misread as opened.
       if (/expir/.test(t)) { selectChip('condition-chips', 'Expired'); heardSummary = 'Expired'; }
       else if (/damag/.test(t)) { selectChip('condition-chips', 'Damaged/unusable'); heardSummary = 'Damaged/unusable'; }
       else if (/seal|unopen/.test(t)) { selectChip('condition-chips', 'Sealed/unopened'); heardSummary = 'Sealed/unopened'; }
       else if (/\bopen(ed)?\b|partial/.test(t)) { selectChip('condition-chips', 'Opened/partially used'); heardSummary = 'Opened/partially used'; }
-    } else if (step.key === 'disposition') {
+    } else if (fieldKey === 'disposition') {
       if (/restock/.test(t)) { selectChip('disposition-chips', 'Restocked to pharmacy'); heardSummary = 'Restocked to pharmacy'; }
       else if (/destroy|discard/.test(t)) { selectChip('disposition-chips', 'Destroyed/discarded'); heardSummary = 'Destroyed/discarded'; }
       else if (/redistribut|donat/.test(t)) { selectChip('disposition-chips', 'Redistributed (e.g. donation programme)'); heardSummary = 'Redistributed'; }
       else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heardSummary = 'Pending decision'; }
     }
 
-    const heardLine = `Heard: "${transcript}" → ${step.key}: ${heardSummary}.`;
-
-    function goToNext() {
-      // Recompute fresh at the moment we actually advance (not when the
-      // result first came in) — respects any manual edit made during the
-      // wait/confirm window.
-      let nextIndex = voiceStepIndex + 1;
-      while (nextIndex < VOICE_STEPS.length && isVoiceStepFilled(VOICE_STEPS[nextIndex].key)) nextIndex++;
-      if (nextIndex < VOICE_STEPS.length) {
-        voiceStepIndex = nextIndex;
-        listenForCurrentStep();
-      } else {
-        stopDictationUI();
-        const doneMsg = 'All fields done — review and tap Save.';
-        setDictateStatus(doneMsg);
-        speak('All done. Review and tap Save.');
-      }
-    }
-
-    if (voiceMode === 'silent') {
-      setDictateStatus(`${heardLine} Moving to next field…`);
-      pendingAdvanceTimer = setTimeout(goToNext, 600);
-    } else {
-      // 'confirm' and 'conversation': show a tap-to-confirm chip, and still
-      // auto-advance after a short pause as a fallback if nobody taps it —
-      // so this never gets slower than the silent mode, only more checkable.
-      setDictateStatus(`${heardLine} Tap "Sounds right" to continue, or fix the field manually.`);
-      showVoiceConfirmChip(goToNext);
-      const fallbackDelay = voiceMode === 'conversation' ? 2200 : 1400;
-      pendingAdvanceTimer = setTimeout(goToNext, fallbackDelay);
-      if (voiceMode === 'conversation') speak(`Got it — ${heardSummary}.`);
-    }
+    setDictateStatus(`Heard: "${transcript}" → ${heardSummary}.`);
   }
 
   // ---- Free-text dictation for Notes ----
