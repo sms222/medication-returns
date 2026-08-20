@@ -15,6 +15,7 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <style>
   :root {
@@ -124,6 +125,9 @@
         </div>
       </div>
 
+      <label>Date collected <span class="hint">(defaults to today — change it if logging a bin from an earlier day)</span></label>
+      <input id="who-date" type="date">
+
       <button class="submit-btn" onclick="confirmWho()">Start logging</button>
     </div>
   </section>
@@ -148,9 +152,12 @@
           Voice input isn't supported in this browser — use the fields below instead.
         </p>
 
-        <label>Drug <span class="hint">(search list, or mark unidentified below)</span></label>
+        <label>Drug <span class="hint">(search list, scan barcode, or mark unidentified below)</span></label>
         <input id="drug_search" list="drug-list" placeholder="Start typing…" autocomplete="off">
         <datalist id="drug-list"></datalist>
+        <button type="button" class="btn-sm" id="scan-btn" style="width:100%; padding:10px; margin-top:8px;" onclick="openScanner()">
+          📷 Scan barcode
+        </button>
         <button type="button" class="unident-btn" id="unident-toggle" onclick="toggleUnidentified()">
           Can't identify this item — log as unidentified/mixed
         </button>
@@ -162,7 +169,27 @@
           </div>
           <div>
             <label>Unit</label>
-            <input id="unit" type="text" value="unit">
+            <select id="unit">
+              <option value="tablet">tablet</option>
+              <option value="capsule">capsule</option>
+              <option value="strip">strip</option>
+              <option value="blister">blister</option>
+              <option value="bottle">bottle</option>
+              <option value="vial">vial</option>
+              <option value="ampoule">ampoule</option>
+              <option value="sachet">sachet</option>
+              <option value="tube">tube</option>
+              <option value="inhaler">inhaler</option>
+              <option value="patch">patch</option>
+              <option value="suppository">suppository</option>
+              <option value="box">box</option>
+              <option value="pack">pack</option>
+              <option value="ml">ml</option>
+              <option value="g">g</option>
+              <option value="unit" selected>unit</option>
+              <option value="__other__">Other…</option>
+            </select>
+            <input id="unit_other" type="text" placeholder="Type unit…" style="display:none; margin-top:8px;">
           </div>
         </div>
         <div id="weight-row" style="display:none;">
@@ -303,6 +330,18 @@
   </section>
 </main>
 
+<!-- ===================== BARCODE SCANNER MODAL ===================== -->
+<div id="scan-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100; padding:16px;">
+  <div style="max-width:480px; margin:0 auto; background:white; border-radius:12px; padding:16px; max-height:90vh; overflow-y:auto;">
+    <div class="toolbar">
+      <div class="section-title" style="margin:0;">Scan barcode</div>
+      <button class="btn-sm" onclick="closeScanner()">✕ Close</button>
+    </div>
+    <div id="qr-reader" style="width:100%;"></div>
+    <div id="scan-status" class="muted" style="margin-top:10px;">Point the camera at the barcode on the packaging.</div>
+  </div>
+</div>
+
 <script>
   let sb = null; // renamed from "supabase" — that name is now taken by the
                  // library's own global object (window.supabase), and
@@ -380,25 +419,38 @@
       : '<option value="">No bins found for this site</option>';
   });
 
+  function todayStr() {
+    // Local-timezone YYYY-MM-DD, not UTC — avoids the "shows yesterday
+    // after midnight" bug that new Date().toISOString() has.
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
   function confirmWho() {
     const staff = document.getElementById('who-staff').value.trim();
     const site_code = document.getElementById('who-site').value;
     const bin_number = document.getElementById('who-bin').value;
+    const collection_date = document.getElementById('who-date').value || todayStr();
     if (!staff || !site_code || !bin_number) { alert('Enter your name and pick a site and bin.'); return; }
-    currentWho = { staff_name: staff, site_code, bin_number: parseInt(bin_number) };
-    try { localStorage.setItem('wastage_who', JSON.stringify(currentWho)); } catch(e) {}
-    document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number}`;
-    document.getElementById('who-display').textContent = `${staff} — ${site_code} Bin ${bin_number}`;
+    currentWho = { staff_name: staff, site_code, bin_number: parseInt(bin_number), collection_date };
+    // Only identity is remembered across visits — the date always defaults
+    // fresh to today on the next visit rather than staying stuck on an old date.
+    try { localStorage.setItem('wastage_who', JSON.stringify({ staff_name: staff, site_code, bin_number: parseInt(bin_number) })); } catch(e) {}
+    document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number} · ${collection_date}`;
+    document.getElementById('who-display').textContent = `${staff} — ${site_code} Bin ${bin_number} (${collection_date})`;
     showTab('log');
   }
 
   function restoreWho() {
+    document.getElementById('who-date').value = todayStr();
     try {
       const saved = localStorage.getItem('wastage_who');
       if (saved) {
-        currentWho = JSON.parse(saved);
-        document.getElementById('who-header').textContent = `${currentWho.staff_name} · ${currentWho.site_code}-${currentWho.bin_number}`;
-        document.getElementById('who-display').textContent = `${currentWho.staff_name} — ${currentWho.site_code} Bin ${currentWho.bin_number}`;
+        const identity = JSON.parse(saved);
+        currentWho = { ...identity, collection_date: todayStr() };
+        document.getElementById('who-header').textContent = `${currentWho.staff_name} · ${currentWho.site_code}-${currentWho.bin_number} · ${currentWho.collection_date}`;
+        document.getElementById('who-display').textContent = `${currentWho.staff_name} — ${currentWho.site_code} Bin ${currentWho.bin_number} (${currentWho.collection_date})`;
+        document.getElementById('who-staff').value = identity.staff_name;
       }
     } catch(e) {}
   }
@@ -415,13 +467,120 @@
     ).join('');
   }
 
+  // ---- Unit select + "remember last unit used per drug" ----
+  // The drugs master list has a default unit, but staff sometimes correct
+  // it for a specific drug (e.g. loose blister vs. full strip) — once
+  // that's happened, remember it locally so the next entry of that same
+  // drug defaults to what was actually last used, not just the master
+  // default. Still fully editable every time.
+  function lastUnits() {
+    try { return JSON.parse(localStorage.getItem('wastage_last_units') || '{}'); } catch(e) { return {}; }
+  }
+  function rememberUnit(drugKey, unit) {
+    if (!drugKey) return;
+    try {
+      const m = lastUnits();
+      m[drugKey] = unit;
+      localStorage.setItem('wastage_last_units', JSON.stringify(m));
+    } catch(e) {}
+  }
+  function drugKeyOf(match) { return match ? `${match.drug_name}|${match.strength_form || ''}` : null; }
+
+  function setUnit(unitValue) {
+    const sel = document.getElementById('unit');
+    const otherInput = document.getElementById('unit_other');
+    const known = [...sel.options].some(o => o.value === unitValue);
+    if (known) {
+      sel.value = unitValue;
+      otherInput.style.display = 'none';
+    } else if (unitValue) {
+      sel.value = '__other__';
+      otherInput.value = unitValue;
+      otherInput.style.display = 'block';
+    }
+  }
+  function getUnit() {
+    const sel = document.getElementById('unit');
+    return sel.value === '__other__' ? document.getElementById('unit_other').value.trim() : sel.value;
+  }
+  document.getElementById('unit').addEventListener('change', (e) => {
+    document.getElementById('unit_other').style.display = e.target.value === '__other__' ? 'block' : 'none';
+  });
+
+  // Shared by drug-search selection, barcode scan, and voice dictation —
+  // one place that fills in unit/cost/category whenever a drug is matched.
+  function applyDrugMatch(match) {
+    if (!match) return;
+    const label = `${match.drug_name}${match.strength_form ? ' — ' + match.strength_form : ''}`;
+    document.getElementById('drug_search').value = label;
+    const remembered = lastUnits()[drugKeyOf(match)];
+    setUnit(remembered || match.unit || 'unit');
+    document.getElementById('unit_cost').value = match.unit_cost ?? '';
+  }
+
+  // ---- Barcode scanning ----
+  // Uses the free html5-qrcode library (camera-only, no external lookup
+  // service) to read a barcode/QR code, then matches it against the
+  // `barcode` column on your drugs master list. Codes that aren't in your
+  // list are shown as-is so staff can search manually — scanning never
+  // blocks entry, it's purely a shortcut when it works.
+  let html5QrCode = null;
+
+  if (!window.Html5Qrcode) {
+    const scanBtnEl = document.getElementById('scan-btn');
+    if (scanBtnEl) { scanBtnEl.disabled = true; scanBtnEl.textContent = '📷 Barcode scanning unavailable in this browser'; }
+  }
+
+  function openScanner() {
+    if (!window.Html5Qrcode) { alert('Barcode scanning is not supported in this browser.'); return; }
+    document.getElementById('scan-modal').style.display = 'block';
+    document.getElementById('scan-status').textContent = 'Starting camera…';
+    html5QrCode = new Html5Qrcode('qr-reader');
+
+    let formatsToSupport;
+    try {
+      formatsToSupport = [
+        Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.ITF
+      ];
+    } catch (e) { formatsToSupport = undefined; } // fall back to library default (QR-only) if this build's API differs
+
+    const config = { fps: 10, qrbox: 250 };
+    if (formatsToSupport) config.formatsToSupport = formatsToSupport;
+
+    html5QrCode.start({ facingMode: 'environment' }, config, onScanSuccess, () => {})
+      .then(() => { document.getElementById('scan-status').textContent = 'Point the camera at the barcode on the packaging.'; })
+      .catch(err => {
+        document.getElementById('scan-status').textContent = 'Could not access camera: ' + err + '. Close this and search/type the drug manually instead.';
+      });
+  }
+
+  function closeScanner() {
+    if (html5QrCode) {
+      html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    }
+    document.getElementById('scan-modal').style.display = 'none';
+  }
+
+  function onScanSuccess(decodedText) {
+    const match = drugsList.find(d => d.barcode && d.barcode === decodedText);
+    if (match) {
+      applyDrugMatch(match);
+      document.getElementById('scan-status').textContent = `✓ Matched: ${match.drug_name}. Closing…`;
+      setTimeout(closeScanner, 900);
+    } else {
+      document.getElementById('scan-status').textContent =
+        `Scanned "${decodedText}" — not in your drug list yet. Close this and search/type the drug manually, or add this barcode to the drugs table later so it's recognized next time.`;
+    }
+  }
+
   document.getElementById('drug_search').addEventListener('change', (e) => {
     const val = e.target.value;
     const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === val);
-    if (match) {
-      document.getElementById('unit').value = match.unit || 'unit';
-      document.getElementById('unit_cost').value = match.unit_cost ?? '';
-    }
+    if (match) applyDrugMatch(match);
   });
 
   function toggleUnidentified() {
@@ -558,10 +717,7 @@
     } else {
       const match = bestDrugMatch(t);
       if (match) {
-        const label = `${match.drug_name}${match.strength_form ? ' — ' + match.strength_form : ''}`;
-        document.getElementById('drug_search').value = label;
-        document.getElementById('unit').value = match.unit || 'unit';
-        document.getElementById('unit_cost').value = match.unit_cost ?? '';
+        applyDrugMatch(match);
         heard.push('drug: ' + match.drug_name);
       }
     }
@@ -643,13 +799,14 @@
       staff_name: currentWho.staff_name,
       site_code: currentWho.site_code,
       bin_number: currentWho.bin_number,
+      collection_date: currentWho.collection_date,
       is_unidentified: isUnidentified,
       drug_name: isUnidentified ? null : (match ? match.drug_name : (drugVal || null)),
       strength_form: isUnidentified ? null : (match ? match.strength_form : null),
       category: isUnidentified ? null : (match ? match.category : null),
       quantity: qty,
       estimated_weight_g: weight,
-      unit: val('unit') || 'unit',
+      unit: getUnit() || 'unit',
       unit_cost: val('unit_cost') ? parseFloat(val('unit_cost')) : (match ? match.unit_cost : null),
       batch_no: val('batch_no') || null,
       expiry_date: val('expiry_date') || null,
@@ -671,6 +828,7 @@
       msg.className = 'msg err';
       msg.textContent = 'Could not save: ' + error.message;
     } else {
+      if (!isUnidentified) rememberUnit(drugKeyOf(match) || `freetext|${payload.drug_name}`, payload.unit);
       msg.className = 'msg ok';
       msg.textContent = '✓ Saved. Ready for the next item.';
       resetItemFields();
@@ -681,7 +839,8 @@
     document.getElementById('drug_search').value = '';
     document.getElementById('quantity').value = '';
     document.getElementById('estimated_weight_g').value = '';
-    document.getElementById('unit').value = 'unit';
+    setUnit('unit');
+    document.getElementById('unit_other').value = '';
     document.getElementById('unit_cost').value = '';
     document.getElementById('batch_no').value = '';
     document.getElementById('expiry_date').value = '';
