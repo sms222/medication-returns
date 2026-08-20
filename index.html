@@ -1,4 +1,4 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -154,18 +154,18 @@
           Voice input isn't supported in this browser — use the fields below instead.
         </p>
 
-        <label>Drug <span class="hint">(search list, scan barcode, or mark unidentified below)</span></label>
+        <label>Brand name <span class="hint">(search list, scan barcode, or mark unidentified below)</span></label>
         <div class="mic-row">
-          <input id="drug_search" list="drug-list" placeholder="Start typing…" autocomplete="off">
-          <button type="button" class="mic-btn" id="mic-drug" onclick="dictateField('drug')" title="Dictate drug name">🎤</button>
+          <input id="brand_search" list="brand-list" placeholder="Start typing…" autocomplete="off">
+          <button type="button" class="mic-btn" id="mic-brand" onclick="dictateField('brand')" title="Dictate brand name">🎤</button>
         </div>
-        <datalist id="drug-list"></datalist>
+        <datalist id="brand-list"></datalist>
         <button type="button" class="btn-sm" id="scan-btn" style="width:100%; padding:10px; margin-top:8px;" onclick="openScanner()">
           📷 Scan barcode
         </button>
 
-        <label>Brand name <span class="hint">(optional — auto-fills if matched, editable)</span></label>
-        <input id="brand_name" type="text" placeholder="e.g. Norvasc">
+        <label>Drug <span class="hint">(generic — auto-fills from brand, editable)</span></label>
+        <input id="drug_search" type="text" placeholder="e.g. Amlodipine">
 
         <button type="button" class="unident-btn" id="unident-toggle" onclick="toggleUnidentified()">
           Can't identify this item — log as unidentified/mixed
@@ -494,15 +494,22 @@
   }
 
   // ---- Load drugs master list ----
+  // Brand name is the primary search field (staff usually recognize the
+  // brand on the packaging before the generic name) — the datalist shows
+  // "Brand (Generic)" where a brand is on file, and falls back to showing
+  // the generic label for drugs that don't have one, so search still works
+  // either way.
+  function brandOptionLabel(d) {
+    const genericLabel = `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}`;
+    return d.brand_name ? `${d.brand_name} (${d.drug_name})` : genericLabel;
+  }
   async function loadDrugs() {
     if (!sb) return;
     const { data, error } = await sb.from('drugs').select('*').order('drug_name');
     if (error) { console.error(error); return; }
     drugsList = data;
-    const dl = document.getElementById('drug-list');
-    dl.innerHTML = data.map(d =>
-      `<option value="${escapeHtml(d.drug_name)}${d.strength_form ? ' — ' + escapeHtml(d.strength_form) : ''}">`
-    ).join('');
+    const dl = document.getElementById('brand-list');
+    dl.innerHTML = data.map(d => `<option value="${escapeHtml(brandOptionLabel(d))}">`).join('');
   }
 
   // ---- Unit select + "remember last unit used per drug" ----
@@ -545,8 +552,10 @@
     document.getElementById('unit_other').style.display = e.target.value === '__other__' ? 'block' : 'none';
   });
 
-  // Shared by drug-search selection, barcode scan, and voice dictation —
-  // one place that fills in unit/cost/category whenever a drug is matched.
+  // Shared by brand-search selection, barcode scan, and voice dictation —
+  // one place that fills in generic name/unit/cost whenever a drug is
+  // matched. Brand name is left alone if the match has none on file, so it
+  // doesn't blank out whatever the user already typed there.
   function applyDrugMatch(match) {
     if (!match) return;
     const label = `${match.drug_name}${match.strength_form ? ' — ' + match.strength_form : ''}`;
@@ -554,7 +563,7 @@
     const remembered = lastUnits()[drugKeyOf(match)];
     setUnit(remembered || match.unit || 'unit');
     document.getElementById('unit_cost').value = match.unit_cost ?? '';
-    document.getElementById('brand_name').value = match.brand_name || '';
+    if (match.brand_name) document.getElementById('brand_search').value = match.brand_name;
     document.getElementById('mal_registration_no').value = match.mal_registration_no || '';
   }
 
@@ -637,9 +646,9 @@
     }
   }
 
-  document.getElementById('drug_search').addEventListener('change', (e) => {
+  document.getElementById('brand_search').addEventListener('change', (e) => {
     const val = e.target.value;
-    const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === val);
+    const match = drugsList.find(d => brandOptionLabel(d) === val || d.brand_name === val);
     if (match) applyDrugMatch(match);
   });
 
@@ -648,8 +657,11 @@
     const btn = document.getElementById('unident-toggle');
     btn.classList.toggle('active', isUnidentified);
     btn.textContent = isUnidentified ? '✓ Logging as unidentified/mixed — tap to undo' : "Can't identify this item — log as unidentified/mixed";
-    document.getElementById('drug_search').disabled = isUnidentified;
-    document.getElementById('drug_search').style.opacity = isUnidentified ? 0.5 : 1;
+    ['brand_search', 'drug_search'].forEach(id => {
+      const el = document.getElementById(id);
+      el.disabled = isUnidentified;
+      el.style.opacity = isUnidentified ? 0.5 : 1;
+    });
     document.getElementById('weight-row').style.display = isUnidentified ? 'block' : 'none';
   }
 
@@ -721,6 +733,16 @@
     synth.onvoiceschanged = pickVoice;
   }
 
+  // Self-managed "is the question still being spoken" flag — NOT the
+  // browser's own `synth.speaking` property, which has a known real bug on
+  // some Chrome builds where it can get stuck permanently `true` even after
+  // speech has actually finished. If that happens and onresult below were
+  // gated on `synth.speaking` directly, EVERY recognition result would be
+  // silently discarded forever — the mic would genuinely be listening and
+  // capturing speech, but the app would look like it wasn't, which matches
+  // "it reads to me but doesn't listen" exactly. This flag always has a
+  // timeout fallback so it can never get stuck.
+  let isSpeaking = false;
   function speak(text) {
     // Fire-and-forget — plays alongside listening, doesn't gate it. See
     // dictateField() for why: waiting for speech to finish before starting
@@ -728,15 +750,19 @@
     if (!synth) return;
     try {
       synth.cancel();
+      isSpeaking = true;
       currentUtterance = new SpeechSynthesisUtterance(text);
       currentUtterance.rate = 1.02;
       if (preferredVoice) currentUtterance.voice = preferredVoice;
+      currentUtterance.onend = () => { isSpeaking = false; };
+      currentUtterance.onerror = () => { isSpeaking = false; };
       synth.speak(currentUtterance);
-    } catch (err) { /* non-critical — recognition still runs without it */ }
+      setTimeout(() => { isSpeaking = false; }, Math.max(2500, text.length * 90));
+    } catch (err) { isSpeaking = false; }
   }
 
   const FIELD_CONFIG = {
-    drug: { question: 'What\'s the drug name?' },
+    brand: { question: 'What\'s the brand name?' },
     quantity: { question: 'How many? Just say the number.' },
     condition: { question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
     disposition: { question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
@@ -744,7 +770,7 @@
 
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionAPI) {
-    ['mic-drug', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
+    ['mic-brand', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -763,7 +789,7 @@
     recognition.onresult = (e) => {
       // Ignore audio picked up while the question is still being read out
       // loud — otherwise the app can hear its own voice as the answer.
-      if (synth && synth.speaking) return;
+      if (isSpeaking) return;
       let interim = '', final = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) final += e.results[i][0].transcript;
@@ -781,7 +807,7 @@
 
     // Tapping directly into a field while its mic is listening always wins
     // — stop and let the manual edit stand.
-    ['drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
+    ['brand_search', 'drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); });
     });
@@ -790,7 +816,7 @@
   }
 
   function setFieldMicUI(fieldKey, on) {
-    ['mic-drug', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
+    ['mic-brand', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       const isThis = id === `mic-${fieldKey}`;
@@ -854,24 +880,29 @@
     return m[b.length][a.length];
   }
 
+  function nameMatchScore(t, name) {
+    if (!name) return 0;
+    name = name.toLowerCase();
+    if (t.includes(name)) return name.length * 2; // strong signal: exact substring match
+    // fuzzy: compare each transcript word against the name
+    let score = 0;
+    t.split(/\s+/).forEach(w => {
+      if (w.length < 4) return;
+      const dist = levenshtein(w, name.slice(0, w.length + 2));
+      const sim = 1 - dist / Math.max(w.length, name.length);
+      if (sim > 0.6) score = Math.max(score, sim * name.length);
+    });
+    return score;
+  }
+
+  // Matches against brand name first (that's what's usually asked/searched
+  // now), falling back to the generic name — so it still works if someone
+  // says the generic instead, or a drug has no brand on file.
   function bestDrugMatch(transcript) {
     const t = transcript.toLowerCase();
     let best = null, bestScore = 0;
     drugsList.forEach(d => {
-      const name = d.drug_name.toLowerCase();
-      let score = 0;
-      if (t.includes(name)) {
-        score = name.length * 2; // strong signal: exact substring match
-      } else {
-        // fuzzy: compare each transcript word against the drug name
-        const words = t.split(/\s+/);
-        words.forEach(w => {
-          if (w.length < 4) return;
-          const dist = levenshtein(w, name.slice(0, w.length + 2));
-          const sim = 1 - dist / Math.max(w.length, name.length);
-          if (sim > 0.6) score = Math.max(score, sim * name.length);
-        });
-      }
+      const score = Math.max(nameMatchScore(t, d.brand_name), nameMatchScore(t, d.drug_name));
       if (score > bestScore) { bestScore = score; best = d; }
     });
     return bestScore > 2 ? best : null;
@@ -892,14 +923,14 @@
     logVoiceLine(fieldKey, transcript);
     let heardSummary = 'not recognized — check/edit this field manually';
 
-    if (fieldKey === 'drug') {
+    if (fieldKey === 'brand') {
       if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
         if (!isUnidentified) toggleUnidentified();
         heardSummary = 'marked unidentified';
       } else {
         const match = bestDrugMatch(t);
-        if (match) { applyDrugMatch(match); heardSummary = match.drug_name; }
-        else { document.getElementById('drug_search').value = transcript; heardSummary = `"${transcript}" (no match — typed as-is, edit if wrong)`; }
+        if (match) { applyDrugMatch(match); heardSummary = match.brand_name || match.drug_name; }
+        else { document.getElementById('brand_search').value = transcript; heardSummary = `"${transcript}" (no match — typed as-is, edit if wrong)`; }
       }
     } else if (fieldKey === 'quantity') {
       let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
@@ -1054,7 +1085,7 @@
       collection_date: currentWho.collection_date,
       is_unidentified: isUnidentified,
       drug_name: isUnidentified ? null : (match ? match.drug_name : (drugVal || null)),
-      brand_name: isUnidentified ? null : (val('brand_name') || null),
+      brand_name: isUnidentified ? null : (val('brand_search') || null),
       strength_form: isUnidentified ? null : (match ? match.strength_form : null),
       category: isUnidentified ? null : (match ? match.category : null),
       quantity: qty,
@@ -1091,7 +1122,7 @@
 
   function resetItemFields() {
     document.getElementById('drug_search').value = '';
-    document.getElementById('brand_name').value = '';
+    document.getElementById('brand_search').value = '';
     document.getElementById('quantity').value = '';
     document.getElementById('estimated_weight_g').value = '';
     setUnit('unit');
@@ -1114,7 +1145,7 @@
     if (isUnidentified) toggleUnidentified();
     setDictateStatus('');
     document.getElementById('optional-details').open = false;
-    document.getElementById('drug_search').focus();
+    document.getElementById('brand_search').focus();
   }
 
   function val(id) { return document.getElementById(id).value.trim(); }
