@@ -655,14 +655,24 @@
     return false;
   }
 
-  // ---- Voice dictation ----
-  // Uses the browser's built-in speech-to-text (free, no external service).
-  // The transcript is parsed with plain keyword/number/fuzzy-match rules —
-  // NOT an AI model — so it's free to run but won't handle every phrasing.
-  // Nothing is ever auto-submitted: staff always see what was parsed and
-  // confirm/fix before tapping Save.
+  // ---- Voice dictation: step-by-step, following the form ----
+  // Say one thing at a time — drug, then quantity, then condition, then
+  // disposition — the app fills each field and automatically moves to the
+  // next. Tap directly into any field at any point to edit it manually;
+  // that field is then treated as done and skipped if voice is restarted.
+  // Uses the browser's free built-in speech-to-text, not an AI model —
+  // each step only needs to recognize ONE thing, which is far more
+  // reliable than parsing a whole freeform sentence at once.
   let recognition = null;
   let isListening = false;
+  let voiceStepIndex = 0;
+
+  const VOICE_STEPS = [
+    { key: 'drug', label: 'the drug name (or say "unidentified")' },
+    { key: 'quantity', label: 'the quantity' },
+    { key: 'condition', label: 'the condition — sealed, opened, expired, or damaged' },
+    { key: 'disposition', label: 'the disposition — restock, destroy, redistribute, or pending' }
+  ];
 
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionAPI) {
@@ -674,29 +684,60 @@
     recognition.interimResults = false;
     recognition.lang = 'en-MY'; // falls back gracefully in browsers that don't support this locale
 
-    recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      parseAndFillTranscript(transcript);
-    };
+    recognition.onresult = (e) => { handleVoiceStepResult(e.results[0][0].transcript); };
     recognition.onerror = (e) => {
-      setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to try again, or fill in the fields manually.');
+      setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to retry this field, or fill it in manually.');
       stopDictationUI();
     };
     recognition.onend = () => { stopDictationUI(); };
+
+    // If staff tap directly into a field while voice is listening, stop
+    // listening rather than have the mic and keyboard fight over it.
+    ['drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); });
+    });
+    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
+    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
+  }
+
+  function isVoiceStepFilled(stepKey) {
+    switch (stepKey) {
+      case 'drug': return isUnidentified || !!document.getElementById('drug_search').value.trim();
+      case 'quantity': return isUnidentified
+        ? !!(document.getElementById('quantity').value || document.getElementById('estimated_weight_g').value)
+        : !!document.getElementById('quantity').value;
+      case 'condition': return !!selectedCondition;
+      case 'disposition': return !!selectedDisposition;
+      default: return false;
+    }
   }
 
   function toggleDictation() {
     if (!recognition) return;
     if (isListening) { recognition.stop(); return; }
+    // Resume from the first field that isn't already filled — so a manual
+    // edit made before or between voice steps is respected, not overwritten.
+    const firstUnfilled = VOICE_STEPS.findIndex(s => !isVoiceStepFilled(s.key));
+    if (firstUnfilled === -1) {
+      setDictateStatus('Everything is already filled in — review and tap Save.');
+      return;
+    }
+    voiceStepIndex = firstUnfilled;
+    listenForCurrentStep();
+  }
+
+  function listenForCurrentStep() {
+    const step = VOICE_STEPS[voiceStepIndex];
     isListening = true;
-    document.getElementById('dictate-btn').textContent = '🔴 Listening… tap to stop';
-    setDictateStatus('Listening — say drug, quantity, condition, disposition in any order.');
+    document.getElementById('dictate-btn').textContent = `🔴 Listening for ${step.label}… tap to stop`;
+    setDictateStatus(`🎤 Say ${step.label}.`);
     try { recognition.start(); } catch (err) { stopDictationUI(); }
   }
 
   function stopDictationUI() {
     isListening = false;
-    document.getElementById('dictate-btn').textContent = '🎤 Say the whole item (drug, qty, condition, disposition)';
+    document.getElementById('dictate-btn').textContent = '🎤 Start voice entry (step by step)';
   }
 
   function setDictateStatus(text) {
@@ -742,67 +783,64 @@
     return bestScore > 2 ? best : null;
   }
 
-  function parseAndFillTranscript(transcript) {
-    const t = transcript.toLowerCase();
-    const heard = [];
-
-    // unidentified?
-    if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
-      if (!isUnidentified) toggleUnidentified();
-      heard.push('unidentified item');
-    } else {
-      const match = bestDrugMatch(t);
-      if (match) {
-        applyDrugMatch(match);
-        heard.push('drug: ' + match.drug_name);
-      }
-    }
-
-    // quantity — prefer "N tablet/capsule/vial/bottle/piece/pill(s)/unit(s)", else first bare number
-    // not immediately followed by mg/mcg/g/ml (which would be part of a strength, not a count)
-    let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
-    if (!qtyMatch) {
-      const numbers = [...t.matchAll(/(\d+(\.\d+)?)\s*(mg|mcg|g|ml)?\b/g)];
-      const bare = numbers.find(n => !n[3]);
-      if (bare) qtyMatch = bare;
-    }
-    if (qtyMatch) {
-      document.getElementById('quantity').value = qtyMatch[1];
-      heard.push('qty: ' + qtyMatch[1]);
-    }
-
-    // condition — check "sealed/unopened" BEFORE "opened/partial", since the word
-    // "unopened" itself contains "open" and would otherwise be misread as opened
-    if (/expir/.test(t)) { selectChip('condition-chips', 'Expired'); heard.push('condition: expired'); }
-    else if (/damag/.test(t)) { selectChip('condition-chips', 'Damaged/unusable'); heard.push('condition: damaged'); }
-    else if (/seal|unopen/.test(t)) { selectChip('condition-chips', 'Sealed/unopened'); heard.push('condition: sealed'); }
-    else if (/\bopen(ed)?\b|partial/.test(t)) { selectChip('condition-chips', 'Opened/partially used'); heard.push('condition: opened'); }
-
-    // disposition
-    if (/restock/.test(t)) { selectChip('disposition-chips', 'Restocked to pharmacy'); heard.push('disposition: restocked'); }
-    else if (/destroy|discard/.test(t)) { selectChip('disposition-chips', 'Destroyed/discarded'); heard.push('disposition: destroyed'); }
-    else if (/redistribut|donat/.test(t)) { selectChip('disposition-chips', 'Redistributed (e.g. donation programme)'); heard.push('disposition: redistributed'); }
-    else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heard.push('disposition: pending'); }
-
-    const missing = [];
-    if (!isUnidentified && !document.getElementById('drug_search').value) missing.push('drug');
-    if (!document.getElementById('quantity').value && !isUnidentified) missing.push('quantity');
-    if (!selectedCondition) missing.push('condition');
-    if (!selectedDisposition) missing.push('disposition');
-
+  function logVoiceLine(stepKey, transcript) {
     // Always keep the raw transcript as text, in Notes — a safety net so
-    // nothing said is lost even where the parser above guessed wrong or
-    // missed something. Appended, so it doesn't clobber anything staff
-    // already typed by hand.
+    // nothing said is lost even where the parser below guessed wrong.
     const notesEl = document.getElementById('notes');
-    const voiceLine = `[Voice] ${transcript}`;
+    const voiceLine = `[Voice:${stepKey}] ${transcript}`;
     notesEl.value = notesEl.value ? `${notesEl.value}\n${voiceLine}` : voiceLine;
-    document.getElementById('optional-details').open = true; // reveal it so staff see the saved transcript
+    document.getElementById('optional-details').open = true; // reveal it so staff can see it landed there
+  }
 
-    let status = `Heard: "${transcript}" → parsed: ${heard.length ? heard.join(', ') : 'nothing recognized'}. Full text saved to Notes.`;
-    if (missing.length) status += ` Still need: ${missing.join(', ')} — check before saving.`;
-    else status += ' Check the fields below, then tap Save.';
-    setDictateStatus(status);
+  function handleVoiceStepResult(transcript) {
+    const step = VOICE_STEPS[voiceStepIndex];
+    const t = transcript.toLowerCase();
+    logVoiceLine(step.key, transcript);
+    let heardSummary = 'not recognized — check/edit this field manually';
+
+    if (step.key === 'drug') {
+      if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
+        if (!isUnidentified) toggleUnidentified();
+        heardSummary = 'marked unidentified';
+      } else {
+        const match = bestDrugMatch(t);
+        if (match) { applyDrugMatch(match); heardSummary = match.drug_name; }
+        else { document.getElementById('drug_search').value = transcript; heardSummary = `"${transcript}" (no match — typed as-is, edit if wrong)`; }
+      }
+    } else if (step.key === 'quantity') {
+      let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
+      if (!qtyMatch) {
+        const numbers = [...t.matchAll(/(\d+(\.\d+)?)\s*(mg|mcg|g|ml)?\b/g)];
+        const bare = numbers.find(n => !n[3]);
+        if (bare) qtyMatch = bare;
+      }
+      if (qtyMatch) { document.getElementById('quantity').value = qtyMatch[1]; heardSummary = qtyMatch[1]; }
+    } else if (step.key === 'condition') {
+      // "sealed/unopened" checked BEFORE "opened/partial" — "unopened" itself
+      // contains "open" and would otherwise be misread as opened.
+      if (/expir/.test(t)) { selectChip('condition-chips', 'Expired'); heardSummary = 'Expired'; }
+      else if (/damag/.test(t)) { selectChip('condition-chips', 'Damaged/unusable'); heardSummary = 'Damaged/unusable'; }
+      else if (/seal|unopen/.test(t)) { selectChip('condition-chips', 'Sealed/unopened'); heardSummary = 'Sealed/unopened'; }
+      else if (/\bopen(ed)?\b|partial/.test(t)) { selectChip('condition-chips', 'Opened/partially used'); heardSummary = 'Opened/partially used'; }
+    } else if (step.key === 'disposition') {
+      if (/restock/.test(t)) { selectChip('disposition-chips', 'Restocked to pharmacy'); heardSummary = 'Restocked to pharmacy'; }
+      else if (/destroy|discard/.test(t)) { selectChip('disposition-chips', 'Destroyed/discarded'); heardSummary = 'Destroyed/discarded'; }
+      else if (/redistribut|donat/.test(t)) { selectChip('disposition-chips', 'Redistributed (e.g. donation programme)'); heardSummary = 'Redistributed'; }
+      else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heardSummary = 'Pending decision'; }
+    }
+
+    // advance to the next field that still needs filling
+    let nextIndex = voiceStepIndex + 1;
+    while (nextIndex < VOICE_STEPS.length && isVoiceStepFilled(VOICE_STEPS[nextIndex].key)) nextIndex++;
+
+    if (nextIndex < VOICE_STEPS.length) {
+      voiceStepIndex = nextIndex;
+      setDictateStatus(`Heard: "${transcript}" → ${step.key}: ${heardSummary}. Moving to next field…`);
+      setTimeout(() => { if (recognition) listenForCurrentStep(); }, 600);
+    } else {
+      stopDictationUI();
+      setDictateStatus(`Heard: "${transcript}" → ${step.key}: ${heardSummary}. All fields done — review and tap Save.`);
+    }
   }
 
   // ---- Label toggle ----
