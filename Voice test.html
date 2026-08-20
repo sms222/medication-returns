@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Test</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 20px auto; padding: 0 16px; }
+  button { width: 100%; padding: 16px; font-size: 1.1rem; margin-top: 12px; border-radius: 10px; border: none; color: #fff; cursor: pointer; }
+  #speak-btn { background: #2563eb; }
+  #listen-btn { background: #7c3aed; }
+  #log { margin-top: 20px; padding: 12px; background: #f5f7fa; border-radius: 8px; font-size: 0.9rem; white-space: pre-wrap; min-height: 200px; border: 1px solid #e2e8f0; }
+  h1 { font-size: 1.2rem; }
+  .info { font-size: 0.85rem; color: #64748b; }
+</style>
+</head>
+<body>
+<h1>Voice Test Page</h1>
+<p class="info">This page tests ONLY the browser's voice features, with nothing else attached — no database, no form. Whatever happens here (or doesn't) tells us whether the problem is this specific device/browser, or something in the main app. Tap each button and read what appears in the box below — screenshot it and send it back.</p>
+
+<p class="info"><b>Step 1:</b> tap this — you should hear a voice say a sentence.</p>
+<button id="speak-btn">🔊 Test: Speak</button>
+
+<p class="info"><b>Step 2:</b> tap this, then say anything — say a few words.</p>
+<button id="listen-btn">🎤 Test: Listen</button>
+
+<div id="log">Log will appear here…</div>
+
+<script>
+  const logEl = document.getElementById('log');
+  let lines = [];
+  function log(msg) {
+    lines.push(`${new Date().toLocaleTimeString()} — ${msg}`);
+    logEl.textContent = lines.join('\n');
+  }
+
+  log('Page loaded. User agent: ' + navigator.userAgent);
+  log('Protocol: ' + location.protocol + ' (must be https or localhost for mic to work)');
+
+  // ---- Speak test ----
+  const synth = window.speechSynthesis || null;
+  document.getElementById('speak-btn').addEventListener('click', () => {
+    if (!synth) { log('❌ speechSynthesis NOT supported on this browser.'); return; }
+    log('Speak button tapped. Calling speechSynthesis.speak()…');
+    const u = new SpeechSynthesisUtterance('This is a test. Can you hear me?');
+    u.onstart = () => log('✅ Speech STARTED (onstart fired).');
+    u.onend = () => log('✅ Speech ENDED (onend fired).');
+    u.onerror = (e) => log('❌ Speech ERROR: ' + e.error);
+    synth.speak(u);
+    log('speak() called — waiting for onstart/onend…');
+  });
+
+  // ---- Listen test ----
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  if (!SpeechRecognitionAPI) {
+    log('❌ SpeechRecognition NOT supported on this browser at all.');
+  } else {
+    recognition = new SpeechRecognitionAPI();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.onstart = () => log('✅ Mic OPENED (onstart fired) — say something now.');
+    recognition.onresult = (e) => {
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      if (interim) log('… hearing: "' + interim + '"');
+      if (final) log('✅ FINAL result: "' + final + '"');
+    };
+    recognition.onerror = (e) => log('❌ Mic ERROR: ' + e.error);
+    recognition.onend = () => log('Mic closed (onend fired).');
+  }
+  document.getElementById('listen-btn').addEventListener('click', () => {
+    if (!recognition) { log('Cannot test — not supported.'); return; }
+    log('Listen button tapped. Calling recognition.start()…');
+    try {
+      recognition.start();
+      log('recognition.start() did not throw — waiting for onstart…');
+    } catch (err) {
+      log('❌ recognition.start() THREW: ' + (err.message || err.name));
+    }
+  });
+
+  // Mic permission state, if the browser supports checking it directly
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'microphone' }).then(status => {
+      log('Mic permission status: ' + status.state);
+    }).catch(() => log('(could not check mic permission state directly on this browser)'));
+  }
+</script>
+</body>
+</html>
