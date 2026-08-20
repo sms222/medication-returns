@@ -144,18 +144,18 @@
 
       <form id="return-form">
 
-        <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0;" onclick="toggleDictation()">
-          🎤 Start voice entry (step by step)
-        </button>
-        <div style="display:flex; align-items:center; gap:6px; margin-top:6px;">
-          <label for="voice-mode" class="hint" style="margin:0;">Voice mode:</label>
-          <select id="voice-mode" style="font-size:0.9em;">
-            <option value="conversation">1. Conversation — app asks each question out loud</option>
-            <option value="confirm">2. Guided — shows what it heard, tap to confirm</option>
-            <option value="silent">3. Guided — silent, auto-advances (fastest)</option>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0; flex:1;" onclick="toggleDictation()">
+            🎤 Voice
+          </button>
+          <select id="voice-mode" style="font-size:0.9em; padding:8px;">
+            <option value="conversation">1. Conversation</option>
+            <option value="confirm">2. Confirm</option>
+            <option value="silent">3. Silent</option>
           </select>
         </div>
         <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
+        <div id="voice-live-transcript" style="display:none; margin-top:4px; font-style:italic; color:#7c3aed; min-height:1.2em;"></div>
         <div id="voice-confirm-chip" style="display:none; margin-top:6px;">
           <button type="button" id="voice-confirm-btn" style="background:#16a34a; color:#fff; border:none; border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.9em;">
             ✓ Sounds right — next
@@ -292,6 +292,7 @@
               🎤 Dictate
             </button>
           </div>
+          <div id="notes-live-transcript" style="display:none; margin-top:4px; font-style:italic; color:#7c3aed; min-height:1.2em;"></div>
           <p id="notes-dictate-unsupported" class="muted" style="display:none;">
             Voice input isn't supported in this browser — type notes manually.
           </p>
@@ -748,15 +749,32 @@
   } else {
     recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true; // lets us show live text as it's heard, so staff can see the mic is actually working
     recognition.lang = 'en-MY'; // falls back gracefully in browsers that don't support this locale
 
-    recognition.onresult = (e) => { handleVoiceStepResult(e.results[0][0].transcript); };
+    recognition.onstart = () => {
+      // Recognition has actually opened the mic now — this is the true
+      // "listening" moment, separate from the button text set earlier
+      // (which just means "waiting for the question to finish").
+      const step = VOICE_STEPS[voiceStepIndex];
+      document.getElementById('dictate-btn').textContent = `🔴 Listening… tap to stop`;
+      showLiveTranscript('…');
+    };
+    recognition.onresult = (e) => {
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      if (interim) showLiveTranscript(interim);
+      if (final) { showLiveTranscript(final); handleVoiceStepResult(final); }
+    };
     recognition.onerror = (e) => {
       setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to retry this field, or fill it in manually.');
+      hideLiveTranscript();
       stopDictationUI();
     };
-    recognition.onend = () => { isListening = false; document.getElementById('dictate-btn').textContent = '🎤 Start voice entry (step by step)'; };
+    recognition.onend = () => { isListening = false; document.getElementById('dictate-btn').textContent = '🎤 Voice'; };
 
     // If staff tap directly into a field while voice is listening (or while
     // waiting to auto-advance), stop and cancel the wait — a manual edit
@@ -799,8 +817,9 @@
   function listenForCurrentStep() {
     const step = VOICE_STEPS[voiceStepIndex];
     hideVoiceConfirmChip();
+    hideLiveTranscript();
     isListening = true;
-    document.getElementById('dictate-btn').textContent = `🔴 Listening for ${step.label}… tap to stop`;
+    document.getElementById('dictate-btn').textContent = `⏳ ${step.label}…`; // not listening yet — waiting on the question / setup
     setDictateStatus(voiceMode === 'conversation' ? `🔊 ${step.question}` : `🎤 Say ${step.label}.`);
     speak(step.question, () => {
       // isListening may have been cancelled (mic re-tapped, field focused)
@@ -812,7 +831,20 @@
 
   function stopDictationUI() {
     isListening = false;
-    document.getElementById('dictate-btn').textContent = '🎤 Start voice entry (step by step)';
+    hideLiveTranscript();
+    document.getElementById('dictate-btn').textContent = '🎤 Voice';
+  }
+
+  function showLiveTranscript(text) {
+    const el = document.getElementById('voice-live-transcript');
+    if (!el) return;
+    el.textContent = `Hearing: ${text}`;
+    el.style.display = 'block';
+  }
+
+  function hideLiveTranscript() {
+    const el = document.getElementById('voice-live-transcript');
+    if (el) el.style.display = 'none';
   }
 
   function cancelPendingAdvance() {
@@ -974,23 +1006,30 @@
   } else {
     notesRecognition = new SpeechRecognitionAPI();
     notesRecognition.continuous = true;
-    notesRecognition.interimResults = false;
+    notesRecognition.interimResults = true; // shows live text so staff can see the mic is actually capturing
     notesRecognition.lang = 'en-MY';
 
+    notesRecognition.onstart = () => { showNotesLiveTranscript('…'); };
     notesRecognition.onresult = (e) => {
       const notesEl = document.getElementById('notes');
+      let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
         const said = e.results[i][0].transcript.trim();
         if (!said) continue;
-        notesEl.value = notesEl.value ? `${notesEl.value} ${said}` : said;
+        if (e.results[i].isFinal) {
+          notesEl.value = notesEl.value ? `${notesEl.value} ${said}` : said;
+        } else {
+          interim += (interim ? ' ' : '') + said;
+        }
       }
+      showNotesLiveTranscript(interim || '…');
     };
     notesRecognition.onerror = () => { stopNotesDictationUI(); };
     notesRecognition.onend = () => {
       // continuous mode can still end on its own (silence timeout, etc.) —
       // restart automatically if the user hasn't tapped stop yet
       if (notesListening) { try { notesRecognition.start(); } catch (err) { stopNotesDictationUI(); } }
+      else { hideNotesLiveTranscript(); }
     };
 
     // Interrupt cleanly if the guided item-flow mic is started, and vice versa.
@@ -1012,6 +1051,19 @@
     notesListening = false;
     const btn = document.getElementById('notes-dictate-btn');
     if (btn) btn.textContent = '🎤 Dictate';
+    hideNotesLiveTranscript();
+  }
+
+  function showNotesLiveTranscript(text) {
+    const el = document.getElementById('notes-live-transcript');
+    if (!el) return;
+    el.textContent = `Hearing: ${text}`;
+    el.style.display = 'block';
+  }
+
+  function hideNotesLiveTranscript() {
+    const el = document.getElementById('notes-live-transcript');
+    if (el) el.style.display = 'none';
   }
 
   // ---- Label toggle ----
