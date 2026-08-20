@@ -147,7 +147,20 @@
         <button type="button" class="submit-btn" id="dictate-btn" style="background:#7c3aed; margin-top:0;" onclick="toggleDictation()">
           🎤 Start voice entry (step by step)
         </button>
+        <div style="display:flex; align-items:center; gap:6px; margin-top:6px;">
+          <label for="voice-mode" class="hint" style="margin:0;">Voice mode:</label>
+          <select id="voice-mode" style="font-size:0.9em;">
+            <option value="conversation">Conversation — app asks each question out loud</option>
+            <option value="confirm">Guided — shows what it heard, tap to confirm</option>
+            <option value="silent">Guided — silent, auto-advances (fastest)</option>
+          </select>
+        </div>
         <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
+        <div id="voice-confirm-chip" style="display:none; margin-top:6px;">
+          <button type="button" id="voice-confirm-btn" style="background:#16a34a; color:#fff; border:none; border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.9em;">
+            ✓ Sounds right — next
+          </button>
+        </div>
         <p id="dictate-unsupported" class="muted" style="display:none;">
           Voice input isn't supported in this browser — use the fields below instead.
         </p>
@@ -669,24 +682,58 @@
   // disposition — the app fills each field and automatically moves to the
   // next. Tap directly into any field at any point to edit it manually;
   // that field is then treated as done and skipped if voice is restarted.
-  // Uses the browser's free built-in speech-to-text, not an AI model —
-  // each step only needs to recognize ONE thing, which is far more
-  // reliable than parsing a whole freeform sentence at once.
+  // Uses the browser's free built-in speech-to-text (and speech-to-text's
+  // free sibling, speech synthesis, for "Conversation" mode) — not an AI
+  // model. Each step only needs to recognize ONE thing, which is far more
+  // reliable than parsing a whole freeform sentence at once, and the
+  // "conversation" is a fixed script (the app always asks the same 4
+  // questions in order), not a model that understands free-form replies.
   let recognition = null;
   let isListening = false;
   let voiceStepIndex = 0;
+  let pendingAdvanceTimer = null;
+
+  // Three selectable voice modes (see the voice-mode dropdown):
+  // - 'conversation' (default): app speaks each question aloud (TTS), then
+  //   listens, then briefly confirms aloud what it heard before moving on.
+  // - 'confirm': no speech output, but shows a "sounds right — next" chip
+  //   staff can tap to advance immediately instead of waiting.
+  // - 'silent': the original behavior — no chip, just auto-advances.
+  let voiceMode = localStorage.getItem('wastage_voice_mode') || 'conversation';
+  const voiceModeSelect = document.getElementById('voice-mode');
+  if (voiceModeSelect) {
+    voiceModeSelect.value = voiceMode;
+    voiceModeSelect.addEventListener('change', (e) => {
+      voiceMode = e.target.value;
+      localStorage.setItem('wastage_voice_mode', voiceMode);
+    });
+  }
+
+  const synth = window.speechSynthesis || null;
+  function speak(text, onDone) {
+    if (!synth || voiceMode !== 'conversation') { if (onDone) onDone(); return; }
+    try {
+      synth.cancel(); // don't let utterances pile up
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.02;
+      u.onend = () => { if (onDone) onDone(); };
+      u.onerror = () => { if (onDone) onDone(); };
+      synth.speak(u);
+    } catch (err) { if (onDone) onDone(); }
+  }
 
   const VOICE_STEPS = [
-    { key: 'drug', label: 'the drug name (or say "unidentified")' },
-    { key: 'quantity', label: 'the quantity' },
-    { key: 'condition', label: 'the condition — sealed, opened, expired, or damaged' },
-    { key: 'disposition', label: 'the disposition — restock, destroy, redistribute, or pending' }
+    { key: 'drug', label: 'the drug name (or say "unidentified")', question: 'What\'s the drug name? Say unidentified if you can\'t tell.' },
+    { key: 'quantity', label: 'the quantity', question: 'How many? Just say the number.' },
+    { key: 'condition', label: 'the condition — sealed, opened, expired, or damaged', question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
+    { key: 'disposition', label: 'the disposition — restock, destroy, redistribute, or pending', question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
   ];
 
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionAPI) {
     document.getElementById('dictate-btn').style.display = 'none';
     document.getElementById('dictate-unsupported').style.display = 'block';
+    if (voiceModeSelect) voiceModeSelect.style.display = 'none';
   } else {
     recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
@@ -698,16 +745,17 @@
       setDictateStatus('Could not hear that (' + e.error + '). Tap the mic to retry this field, or fill it in manually.');
       stopDictationUI();
     };
-    recognition.onend = () => { stopDictationUI(); };
+    recognition.onend = () => { isListening = false; document.getElementById('dictate-btn').textContent = '🎤 Start voice entry (step by step)'; };
 
-    // If staff tap directly into a field while voice is listening, stop
-    // listening rather than have the mic and keyboard fight over it.
+    // If staff tap directly into a field while voice is listening (or while
+    // waiting to auto-advance), stop and cancel the wait — a manual edit
+    // always wins over whatever voice was about to do.
     ['drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); });
+      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
     });
-    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
-    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
+    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
+    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); cancelPendingAdvance(); });
   }
 
   function isVoiceStepFilled(stepKey) {
@@ -724,7 +772,7 @@
 
   function toggleDictation() {
     if (!recognition) return;
-    if (isListening) { recognition.stop(); return; }
+    if (isListening) { recognition.stop(); if (synth) synth.cancel(); cancelPendingAdvance(); stopDictationUI(); return; }
     if (typeof notesListening !== 'undefined' && notesListening && notesRecognition) { notesListening = false; notesRecognition.stop(); } // don't run both mics at once
     // Resume from the first field that isn't already filled — so a manual
     // edit made before or between voice steps is respected, not overwritten.
@@ -739,15 +787,41 @@
 
   function listenForCurrentStep() {
     const step = VOICE_STEPS[voiceStepIndex];
+    hideVoiceConfirmChip();
     isListening = true;
     document.getElementById('dictate-btn').textContent = `🔴 Listening for ${step.label}… tap to stop`;
-    setDictateStatus(`🎤 Say ${step.label}.`);
-    try { recognition.start(); } catch (err) { stopDictationUI(); }
+    setDictateStatus(voiceMode === 'conversation' ? `🔊 ${step.question}` : `🎤 Say ${step.label}.`);
+    speak(step.question, () => {
+      // isListening may have been cancelled (mic re-tapped, field focused)
+      // while the question was being spoken — don't start listening if so.
+      if (!isListening) return;
+      try { recognition.start(); } catch (err) { stopDictationUI(); }
+    });
   }
 
   function stopDictationUI() {
     isListening = false;
     document.getElementById('dictate-btn').textContent = '🎤 Start voice entry (step by step)';
+  }
+
+  function cancelPendingAdvance() {
+    if (pendingAdvanceTimer) { clearTimeout(pendingAdvanceTimer); pendingAdvanceTimer = null; }
+    hideVoiceConfirmChip();
+  }
+
+  function hideVoiceConfirmChip() {
+    const chip = document.getElementById('voice-confirm-chip');
+    if (chip) chip.style.display = 'none';
+    const btn = document.getElementById('voice-confirm-btn');
+    if (btn) btn.onclick = null;
+  }
+
+  function showVoiceConfirmChip(onConfirm) {
+    const chip = document.getElementById('voice-confirm-chip');
+    const btn = document.getElementById('voice-confirm-btn');
+    if (!chip || !btn) return;
+    chip.style.display = 'block';
+    btn.onclick = () => { cancelPendingAdvance(); onConfirm(); };
   }
 
   function setDictateStatus(text) {
@@ -839,17 +913,37 @@
       else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heardSummary = 'Pending decision'; }
     }
 
-    // advance to the next field that still needs filling
-    let nextIndex = voiceStepIndex + 1;
-    while (nextIndex < VOICE_STEPS.length && isVoiceStepFilled(VOICE_STEPS[nextIndex].key)) nextIndex++;
+    const heardLine = `Heard: "${transcript}" → ${step.key}: ${heardSummary}.`;
 
-    if (nextIndex < VOICE_STEPS.length) {
-      voiceStepIndex = nextIndex;
-      setDictateStatus(`Heard: "${transcript}" → ${step.key}: ${heardSummary}. Moving to next field…`);
-      setTimeout(() => { if (recognition) listenForCurrentStep(); }, 600);
+    function goToNext() {
+      // Recompute fresh at the moment we actually advance (not when the
+      // result first came in) — respects any manual edit made during the
+      // wait/confirm window.
+      let nextIndex = voiceStepIndex + 1;
+      while (nextIndex < VOICE_STEPS.length && isVoiceStepFilled(VOICE_STEPS[nextIndex].key)) nextIndex++;
+      if (nextIndex < VOICE_STEPS.length) {
+        voiceStepIndex = nextIndex;
+        listenForCurrentStep();
+      } else {
+        stopDictationUI();
+        const doneMsg = 'All fields done — review and tap Save.';
+        setDictateStatus(doneMsg);
+        speak('All done. Review and tap Save.');
+      }
+    }
+
+    if (voiceMode === 'silent') {
+      setDictateStatus(`${heardLine} Moving to next field…`);
+      pendingAdvanceTimer = setTimeout(goToNext, 600);
     } else {
-      stopDictationUI();
-      setDictateStatus(`Heard: "${transcript}" → ${step.key}: ${heardSummary}. All fields done — review and tap Save.`);
+      // 'confirm' and 'conversation': show a tap-to-confirm chip, and still
+      // auto-advance after a short pause as a fallback if nobody taps it —
+      // so this never gets slower than the silent mode, only more checkable.
+      setDictateStatus(`${heardLine} Tap "Sounds right" to continue, or fix the field manually.`);
+      showVoiceConfirmChip(goToNext);
+      const fallbackDelay = voiceMode === 'conversation' ? 2200 : 1400;
+      pendingAdvanceTimer = setTimeout(goToNext, fallbackDelay);
+      if (voiceMode === 'conversation') speak(`Got it — ${heardSummary}.`);
     }
   }
 
