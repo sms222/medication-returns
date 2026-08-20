@@ -158,6 +158,10 @@
         <button type="button" class="btn-sm" id="scan-btn" style="width:100%; padding:10px; margin-top:8px;" onclick="openScanner()">
           📷 Scan barcode
         </button>
+
+        <label>Brand name <span class="hint">(optional — auto-fills if matched, editable)</span></label>
+        <input id="brand_name" type="text" placeholder="e.g. Norvasc">
+
         <button type="button" class="unident-btn" id="unident-toggle" onclick="toggleUnidentified()">
           Can't identify this item — log as unidentified/mixed
         </button>
@@ -225,6 +229,16 @@
 
           <label>Expiry date</label>
           <input id="expiry_date" type="date">
+
+          <label>Manufacturer/MAL registration no. <span class="hint">(optional, rarely needed)</span></label>
+          <input id="mal_registration_no" type="text" placeholder="e.g. MAL12345678A">
+
+          <label>Photo <span class="hint">(optional — documentation only, nothing is read from it automatically)</span></label>
+          <input id="photo_input" type="file" accept="image/*" capture="environment">
+          <div id="photo-preview" style="display:none; margin-top:8px;">
+            <img id="photo-preview-img" style="max-width:100%; max-height:200px; border-radius:8px; border:1px solid var(--border);">
+            <button type="button" class="btn-sm" style="margin-top:6px;" onclick="clearPhoto()">✕ Remove photo</button>
+          </div>
 
           <label style="display:flex; align-items:center; gap:8px;">
             <input type="checkbox" id="label_present" style="width:auto;">
@@ -516,6 +530,28 @@
     const remembered = lastUnits()[drugKeyOf(match)];
     setUnit(remembered || match.unit || 'unit');
     document.getElementById('unit_cost').value = match.unit_cost ?? '';
+    document.getElementById('brand_name').value = match.brand_name || '';
+    document.getElementById('mal_registration_no').value = match.mal_registration_no || '';
+  }
+
+  // ---- Photo (documentation only — no analysis, no auto-fill) ----
+  let selectedPhotoFile = null;
+  document.getElementById('photo_input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) { clearPhoto(); return; }
+    selectedPhotoFile = file;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      document.getElementById('photo-preview-img').src = ev.target.result;
+      document.getElementById('photo-preview').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  });
+  function clearPhoto() {
+    selectedPhotoFile = null;
+    document.getElementById('photo_input').value = '';
+    document.getElementById('photo-preview').style.display = 'none';
+    document.getElementById('photo-preview-img').src = '';
   }
 
   // ---- Barcode scanning ----
@@ -795,6 +831,25 @@
     const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === drugVal);
     const labelPresent = document.getElementById('label_present').checked;
 
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    // Photo upload (if one was taken) happens first, but never blocks the
+    // save — if it fails, the item still saves, just without the photo.
+    let photoPath = null;
+    let photoWarning = '';
+    if (selectedPhotoFile) {
+      btn.textContent = 'Uploading photo…';
+      const ext = (selectedPhotoFile.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${currentWho.site_code}-${currentWho.bin_number}/${currentWho.collection_date}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: uploadError } = await sb.storage.from('return-photos').upload(path, selectedPhotoFile);
+      if (uploadError) {
+        photoWarning = ' (photo upload failed: ' + uploadError.message + ' — item saved without it)';
+      } else {
+        photoPath = path;
+      }
+      btn.textContent = 'Saving…';
+    }
+
     const payload = {
       staff_name: currentWho.staff_name,
       site_code: currentWho.site_code,
@@ -802,6 +857,7 @@
       collection_date: currentWho.collection_date,
       is_unidentified: isUnidentified,
       drug_name: isUnidentified ? null : (match ? match.drug_name : (drugVal || null)),
+      brand_name: isUnidentified ? null : (val('brand_name') || null),
       strength_form: isUnidentified ? null : (match ? match.strength_form : null),
       category: isUnidentified ? null : (match ? match.category : null),
       quantity: qty,
@@ -810,6 +866,8 @@
       unit_cost: val('unit_cost') ? parseFloat(val('unit_cost')) : (match ? match.unit_cost : null),
       batch_no: val('batch_no') || null,
       expiry_date: val('expiry_date') || null,
+      mal_registration_no: val('mal_registration_no') || null,
+      photo_path: photoPath,
       condition: selectedCondition,
       disposition: selectedDisposition,
       label_present: labelPresent,
@@ -820,7 +878,6 @@
       notes: val('notes') || null
     };
 
-    btn.disabled = true; btn.textContent = 'Saving…';
     const { error } = await sb.from('medication_returns').insert(payload);
     btn.disabled = false; btn.textContent = 'Save item';
 
@@ -829,14 +886,15 @@
       msg.textContent = 'Could not save: ' + error.message;
     } else {
       if (!isUnidentified) rememberUnit(drugKeyOf(match) || `freetext|${payload.drug_name}`, payload.unit);
-      msg.className = 'msg ok';
-      msg.textContent = '✓ Saved. Ready for the next item.';
+      msg.className = photoWarning ? 'msg err' : 'msg ok';
+      msg.textContent = '✓ Saved. Ready for the next item.' + photoWarning;
       resetItemFields();
     }
   });
 
   function resetItemFields() {
     document.getElementById('drug_search').value = '';
+    document.getElementById('brand_name').value = '';
     document.getElementById('quantity').value = '';
     document.getElementById('estimated_weight_g').value = '';
     setUnit('unit');
@@ -844,6 +902,8 @@
     document.getElementById('unit_cost').value = '';
     document.getElementById('batch_no').value = '';
     document.getElementById('expiry_date').value = '';
+    document.getElementById('mal_registration_no').value = '';
+    clearPhoto();
     document.getElementById('label_present').checked = false;
     document.getElementById('label-fields').style.display = 'none';
     document.getElementById('qty_dispensed_on_label').value = '';
