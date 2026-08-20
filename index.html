@@ -150,9 +150,9 @@
         <div style="display:flex; align-items:center; gap:6px; margin-top:6px;">
           <label for="voice-mode" class="hint" style="margin:0;">Voice mode:</label>
           <select id="voice-mode" style="font-size:0.9em;">
-            <option value="conversation">Conversation — app asks each question out loud</option>
-            <option value="confirm">Guided — shows what it heard, tap to confirm</option>
-            <option value="silent">Guided — silent, auto-advances (fastest)</option>
+            <option value="conversation">1. Conversation — app asks each question out loud</option>
+            <option value="confirm">2. Guided — shows what it heard, tap to confirm</option>
+            <option value="silent">3. Guided — silent, auto-advances (fastest)</option>
           </select>
         </div>
         <div id="dictate-status" class="muted" style="margin-top:6px; display:none;"></div>
@@ -710,16 +710,27 @@
   }
 
   const synth = window.speechSynthesis || null;
+  let currentUtterance = null; // kept as a live reference — Chrome can silently
+  // garbage-collect a SpeechSynthesisUtterance mid-speech if nothing holds a
+  // reference to it, which then means onend/onerror never fire and whatever
+  // was waiting on them (starting the mic) hangs forever. This is a known
+  // real Chrome bug, not a theoretical one.
   function speak(text, onDone) {
     if (!synth || voiceMode !== 'conversation') { if (onDone) onDone(); return; }
+    let done = false;
+    const finish = () => { if (done) return; done = true; if (onDone) onDone(); };
     try {
       synth.cancel(); // don't let utterances pile up
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.02;
-      u.onend = () => { if (onDone) onDone(); };
-      u.onerror = () => { if (onDone) onDone(); };
-      synth.speak(u);
-    } catch (err) { if (onDone) onDone(); }
+      currentUtterance = new SpeechSynthesisUtterance(text);
+      currentUtterance.rate = 1.02;
+      currentUtterance.onend = finish;
+      currentUtterance.onerror = finish;
+      synth.speak(currentUtterance);
+      // Safety net: some browsers/devices silently fail to ever fire
+      // onend/onerror. Don't let a broken TTS call block the mic forever —
+      // fall through to listening after a generous timeout either way.
+      setTimeout(finish, Math.max(2500, text.length * 90));
+    } catch (err) { finish(); }
   }
 
   const VOICE_STEPS = [
