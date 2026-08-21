@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Medication Returns Tracker</title>
 
-<!-- ============================================================
-     CONFIG — edit these two lines before deploying.
-     Get them from Supabase: Project Settings -> API
-     ============================================================ -->
 <script>
   const SUPABASE_URL = "https://qochmctaqlbigbpqugqv.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvY2htY3RhcWxiaWdicHF1Z3F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDM5MDksImV4cCI6MjEwMjcxOTkwOX0.ucUN6DxJ7xyUmmrg2Up0_ak94jIbRNj0bO8nh06Bw84";
@@ -18,78 +14,50 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <style>
-  :root {
-    --blue: #2563eb; --blue-dark: #1e40af; --bg: #f5f7fa; --card: #ffffff;
-    --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --danger: #dc2626; --ok: #16a34a;
-  }
+  :root { --blue: #2563eb; --blue-dark: #1e40af; --bg: #f5f7fa; --card: #ffffff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --danger: #dc2626; --ok: #16a34a; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
   header { background: var(--blue-dark); color: white; padding: 14px 16px; position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; }
   header h1 { margin: 0; font-size: 1.05rem; }
   header .who { font-size: 0.78rem; opacity: 0.9; text-align: right; cursor: pointer; text-decoration: underline; }
-
   nav { display: flex; background: white; border-bottom: 1px solid var(--border); position: sticky; top: 50px; z-index: 9; }
   nav button { flex: 1; padding: 12px 8px; background: none; border: none; font-size: 0.95rem; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; }
   nav button.active { color: var(--blue-dark); border-bottom-color: var(--blue); font-weight: 600; }
-
   main { max-width: 640px; margin: 0 auto; padding: 16px; }
-
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-
   label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
   label .hint { font-weight: 400; color: var(--muted); font-size: 0.78rem; }
-  input, select, textarea {
-    width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 8px; background: #fff;
-  }
+  input, select, textarea { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
   textarea { resize: vertical; min-height: 50px; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 480px) { .row2 { grid-template-columns: 1fr; } }
-
   .submit-btn { margin-top: 16px; width: 100%; padding: 16px; background: var(--blue); color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
   .submit-btn:disabled { opacity: 0.6; }
-  .submit-btn:active { background: var(--blue-dark); }
-
   .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 0.9rem; display: none; }
   .msg.ok { background: #dcfce7; color: #166534; display: block; }
   .msg.err { background: #fee2e2; color: #991b1b; display: block; }
-
+  .msg.info { background: #e0e7ff; color: #3730a3; display: block; }
   .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
   .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
   .stat .num { font-size: 1.4rem; font-weight: 700; color: var(--blue-dark); }
   .stat .lbl { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
-
   table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
-  tr:last-child td { border-bottom: none; }
   .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
-
   .section-title { font-size: 0.95rem; font-weight: 700; margin: 0 0 10px; }
   .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
   .btn-sm { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: white; font-size: 0.82rem; cursor: pointer; color: var(--text); }
-  .btn-sm:hover { background: #f1f5f9; }
-  .mic-btn { flex-shrink: 0; width: 40px; height: 40px; border-radius: 8px; border: none; background: #7c3aed; color: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .mic-btn.listening { background: #dc2626; }
-  .mic-row { display: flex; gap: 8px; align-items: center; }
-  .mic-row > *:first-child { flex: 1; }
-
-  .config-warning { background: #fef3c7; color: #92400e; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 16px; }
-  .muted { color: var(--muted); font-size: 0.8rem; }
-  .empty { color: var(--muted); font-size: 0.85rem; padding: 12px 0; text-align: center; }
-
-  /* Condition tap-buttons */
   .chip-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
   .chip { padding: 10px 14px; border: 2px solid var(--border); border-radius: 999px; background: white; font-size: 0.88rem; cursor: pointer; }
   .chip.selected { border-color: var(--blue); background: #eff6ff; color: var(--blue-dark); font-weight: 600; }
-
   details.optional { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
   details.optional summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; color: var(--muted); }
-
   .who-badge { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .who-badge b { color: var(--blue-dark); }
   .unident-btn { width: 100%; padding: 10px; margin-top: 8px; border: 1px dashed var(--muted); border-radius: 8px; background: #f8fafc; color: var(--muted); font-size: 0.85rem; cursor: pointer; }
   .unident-btn.active { background: #fef3c7; border-color: #d97706; color: #92400e; font-weight: 600; }
+  .ai-box { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
 </style>
 </head>
 <body>
@@ -105,19 +73,13 @@
 </nav>
 
 <main>
-  <div id="config-warning" class="config-warning" style="display:none;">
-    ⚠️ Supabase is not configured yet. Edit <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>
-    near the top of this file before this app will save any data.
-  </div>
-
-  <!-- ===================== WHO SCREEN (staff + bin picker) ===================== -->
+  <!-- WHO SCREEN -->
   <section id="tab-who" style="display:none;">
     <div class="card">
       <div class="section-title">Who's logging, and which bin?</div>
       <label>Your name</label>
       <input id="who-staff" list="staff-list" placeholder="Type your name…">
       <datalist id="staff-list"></datalist>
-
       <div class="row2">
         <div>
           <label>Hospital site</label>
@@ -128,43 +90,42 @@
           <select id="who-bin"><option value="">Select site first…</option></select>
         </div>
       </div>
-
-      <label>Date collected <span class="hint">(defaults to today — change it if logging a bin from an earlier day)</span></label>
+      <label>Date collected</label>
       <input id="who-date" type="date">
-
       <button class="submit-btn" onclick="confirmWho()">Start logging</button>
     </div>
   </section>
 
-  <!-- ===================== LOG TAB ===================== -->
+  <!-- LOG TAB -->
   <section id="tab-log" style="display:none;">
     <div class="who-badge">
       <span>Logging as <b id="who-display">–</b></span>
       <button class="btn-sm" onclick="showWhoScreen()">Switch</button>
     </div>
 
+    <!-- SMART DICTATE ENGINE -->
+    <div class="ai-box">
+      <label style="margin-top:0;">OpenAI API Key (Required for Dictation)</label>
+      <input type="password" id="openai-key" placeholder="sk-..." style="margin-bottom:12px; padding:8px;">
+      
+      <button type="button" id="smart-record-btn" onclick="toggleSmartDictation()" class="submit-btn" style="background:#4f46e5; margin-top:0;">
+        🎤 Tap to Speak Item
+      </button>
+      <div id="smart-status" class="msg"></div>
+    </div>
+
     <div class="card">
       <div class="section-title">Log an item found in the bin</div>
-
       <form id="return-form">
 
-        <div id="dictate-status" class="muted" style="margin-top:0; display:none;"></div>
-        <div id="voice-live-transcript" style="display:none; margin-top:4px; font-style:italic; color:#7c3aed; min-height:1.2em;"></div>
-        <p id="dictate-unsupported" class="muted" style="display:none;">
-          Voice input isn't supported in this browser — use the fields below instead.
-        </p>
-
-        <label>Brand name <span class="hint">(search list, scan barcode, or mark unidentified below)</span></label>
-        <div class="mic-row">
-          <input id="brand_search" list="brand-list" placeholder="Start typing…" autocomplete="off">
-          <button type="button" class="mic-btn" id="mic-brand" onclick="dictateField('brand')" title="Dictate brand name">🎤</button>
-        </div>
+        <label>Brand name</label>
+        <input id="brand_search" list="brand-list" placeholder="Start typing or use dictation…" autocomplete="off">
         <datalist id="brand-list"></datalist>
         <button type="button" class="btn-sm" id="scan-btn" style="width:100%; padding:10px; margin-top:8px;" onclick="openScanner()">
           📷 Scan barcode
         </button>
 
-        <label>Drug <span class="hint">(generic — auto-fills from brand, editable)</span></label>
+        <label>Drug <span class="hint">(generic — auto-fills from brand)</span></label>
         <input id="drug_search" type="text" placeholder="e.g. Amlodipine">
 
         <button type="button" class="unident-btn" id="unident-toggle" onclick="toggleUnidentified()">
@@ -174,10 +135,7 @@
         <div id="qty-row" class="row2">
           <div>
             <label>Quantity found</label>
-            <div class="mic-row">
-              <input id="quantity" type="number" min="0.01" step="0.01" inputmode="decimal">
-              <button type="button" class="mic-btn" id="mic-quantity" onclick="dictateField('quantity')" title="Dictate quantity">🎤</button>
-            </div>
+            <input id="quantity" type="number" min="0.01" step="0.01" inputmode="decimal">
           </div>
           <div>
             <label>Unit</label>
@@ -185,34 +143,21 @@
               <option value="tablet">tablet</option>
               <option value="capsule">capsule</option>
               <option value="strip">strip</option>
-              <option value="blister">blister</option>
               <option value="bottle">bottle</option>
-              <option value="vial">vial</option>
-              <option value="ampoule">ampoule</option>
-              <option value="sachet">sachet</option>
-              <option value="tube">tube</option>
-              <option value="inhaler">inhaler</option>
-              <option value="patch">patch</option>
-              <option value="suppository">suppository</option>
               <option value="box">box</option>
-              <option value="pack">pack</option>
-              <option value="ml">ml</option>
-              <option value="g">g</option>
               <option value="unit" selected>unit</option>
               <option value="__other__">Other…</option>
             </select>
             <input id="unit_other" type="text" placeholder="Type unit…" style="display:none; margin-top:8px;">
           </div>
         </div>
+
         <div id="weight-row" style="display:none;">
-          <label>Estimated weight (g) <span class="hint">for a mixed/loose lot you can't count</span></label>
+          <label>Estimated weight (g)</label>
           <input id="estimated_weight_g" type="number" min="0.1" step="0.1" inputmode="decimal">
         </div>
 
-        <div class="mic-row">
-          <label style="margin:0;">Condition *</label>
-          <button type="button" class="mic-btn" id="mic-condition" onclick="dictateField('condition')" title="Dictate condition">🎤</button>
-        </div>
+        <label>Condition *</label>
         <div class="chip-group" id="condition-chips">
           <div class="chip" data-value="Sealed/unopened">Sealed/unopened</div>
           <div class="chip" data-value="Opened/partially used">Opened/partial</div>
@@ -221,10 +166,7 @@
           <div class="chip" data-value="Unknown">Unknown</div>
         </div>
 
-        <div class="mic-row">
-          <label style="margin:0;">Disposition *</label>
-          <button type="button" class="mic-btn" id="mic-disposition" onclick="dictateField('disposition')" title="Dictate disposition">🎤</button>
-        </div>
+        <label>Disposition *</label>
         <div class="chip-group" id="disposition-chips">
           <div class="chip" data-value="Restocked to pharmacy">Restocked</div>
           <div class="chip" data-value="Destroyed/discarded">Destroyed</div>
@@ -233,70 +175,15 @@
         </div>
 
         <details class="optional" id="optional-details">
-          <summary>More detail (optional — only fill in if you actually know it)</summary>
-
-          <label>Unit cost (RM) <span class="hint">auto-filled when a drug is matched; edit if needed</span></label>
+          <summary>More detail (cost, expiry, notes)</summary>
+          <label>Unit cost (RM)</label>
           <input id="unit_cost" type="number" min="0" step="0.01" inputmode="decimal">
-
           <label>Batch no.</label>
           <input id="batch_no" type="text">
-
           <label>Expiry date</label>
           <input id="expiry_date" type="date">
-
-          <label>Manufacturer/MAL registration no. <span class="hint">(optional, rarely needed)</span></label>
-          <input id="mal_registration_no" type="text" placeholder="e.g. MAL12345678A">
-
-          <label>Photo <span class="hint">(optional — documentation only, nothing is read from it automatically)</span></label>
-          <input id="photo_input" type="file" accept="image/*" capture="environment">
-          <div id="photo-preview" style="display:none; margin-top:8px;">
-            <img id="photo-preview-img" style="max-width:100%; max-height:200px; border-radius:8px; border:1px solid var(--border);">
-            <button type="button" class="btn-sm" style="margin-top:6px;" onclick="clearPhoto()">✕ Remove photo</button>
-          </div>
-
-          <label style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="label_present" style="width:auto;">
-            Original pharmacy dispensing label still attached
-          </label>
-          <div id="label-fields" style="display:none;">
-            <div class="row2">
-              <div>
-                <label>Qty dispensed (per label)</label>
-                <input id="qty_dispensed_on_label" type="number" min="0" step="0.01">
-              </div>
-              <div>
-                <label>Date dispensed (per label)</label>
-                <input id="date_dispensed_on_label" type="date">
-              </div>
-            </div>
-            <label>Prescribing clinic/ward on label</label>
-            <input id="dispensing_unit_on_label" type="text">
-          </div>
-
-          <label>Reason for return <span class="hint">(only if actually known — leave blank otherwise)</span></label>
-          <select id="reason">
-            <option value="">Unknown/not stated (default)</option>
-            <option>Noted on attached slip/note: discharged or course finished</option>
-            <option>Noted on attached slip/note: doctor changed medicine</option>
-            <option>Noted on attached slip/note: patient deceased</option>
-            <option>Noted on attached slip/note: other</option>
-            <option>Inferred from item: expired, never opened</option>
-            <option>Inferred from item: unopened, unused</option>
-            <option>Other (see notes)</option>
-          </select>
-
-          <label>Notes <span class="hint">(no patient identifiers)</span></label>
-          <div style="display:flex; gap:8px; align-items:flex-start;">
-            <textarea id="notes" style="flex:1;"></textarea>
-            <button type="button" id="notes-dictate-btn" onclick="toggleNotesDictation()"
-              style="white-space:nowrap; background:#7c3aed; color:#fff; border:none; border-radius:8px; padding:8px 10px; cursor:pointer;">
-              🎤 Dictate
-            </button>
-          </div>
-          <div id="notes-live-transcript" style="display:none; margin-top:4px; font-style:italic; color:#7c3aed; min-height:1.2em;"></div>
-          <p id="notes-dictate-unsupported" class="muted" style="display:none;">
-            Voice input isn't supported in this browser — type notes manually.
-          </p>
+          <label>Notes</label>
+          <textarea id="notes"></textarea>
         </details>
 
         <button type="submit" class="submit-btn" id="submit-btn">Save item</button>
@@ -305,103 +192,32 @@
     </div>
   </section>
 
-  <!-- ===================== DASHBOARD TAB ===================== -->
+  <!-- DASHBOARD TAB -->
   <section id="tab-dash" style="display:none;">
     <div class="stat-grid">
       <div class="stat"><div class="num" id="stat-count">–</div><div class="lbl">Items logged</div></div>
       <div class="stat"><div class="num" id="stat-qty">–</div><div class="lbl">Total units returned</div></div>
       <div class="stat"><div class="num" id="stat-cost">–</div><div class="lbl">Estimated wastage cost (RM)</div></div>
     </div>
-    <div class="stat-grid">
-      <div class="stat"><div class="num" id="stat-labelpct">–</div><div class="lbl">Items with label attached</div></div>
-      <div class="stat"><div class="num" id="stat-leftover">–</div><div class="lbl">Avg. leftover rate</div></div>
-      <div class="stat"><div class="num" id="stat-days">–</div><div class="lbl">Avg. days since dispensing</div></div>
-    </div>
-
     <div class="card">
-      <div class="toolbar">
-        <div class="section-title" style="margin:0;">Top drugs by wastage cost</div>
-        <button class="btn-sm" onclick="exportCSV()">⬇ Export all data (CSV)</button>
-      </div>
-      <table><thead><tr><th>Drug</th><th class="num-cell">Qty</th><th class="num-cell">Cost (RM)</th></tr></thead>
-        <tbody id="tbl-drugs"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="section-title">By hospital site</div>
-      <table><thead><tr><th>Site</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
-        <tbody id="tbl-site"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="section-title">By bin</div>
-      <table><thead><tr><th>Bin</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
-        <tbody id="tbl-bin"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="section-title">By condition</div>
-      <table><thead><tr><th>Condition</th><th class="num-cell">Items</th><th class="num-cell">% of total</th></tr></thead>
-        <tbody id="tbl-condition"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="section-title">Reason for return (mostly "Unknown" — expected)</div>
-      <table><thead><tr><th>Reason</th><th class="num-cell">Items</th><th class="num-cell">% of total</th></tr></thead>
-        <tbody id="tbl-reasons"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="section-title">By disposition</div>
-      <table><thead><tr><th>Disposition</th><th class="num-cell">Items</th><th class="num-cell">Cost (RM)</th></tr></thead>
-        <tbody id="tbl-disposition"></tbody></table>
-    </div>
-
-    <div class="card">
-      <div class="toolbar">
-        <div class="section-title" style="margin:0;">Recent entries</div>
-        <button class="btn-sm" onclick="loadDashboard()">↻ Refresh</button>
-      </div>
+      <div class="section-title">Recent entries</div>
       <table><thead><tr><th>Date</th><th>Site/Bin</th><th>Drug</th><th class="num-cell">Qty</th><th>Condition</th></tr></thead>
         <tbody id="tbl-recent"></tbody></table>
     </div>
   </section>
 </main>
 
-<!-- ===================== BARCODE SCANNER MODAL ===================== -->
-<div id="scan-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100; padding:16px;">
-  <div style="max-width:480px; margin:0 auto; background:white; border-radius:12px; padding:16px; max-height:90vh; overflow-y:auto;">
-    <div class="toolbar">
-      <div class="section-title" style="margin:0;">Scan barcode</div>
-      <button class="btn-sm" onclick="closeScanner()">✕ Close</button>
-    </div>
-    <div id="qr-reader" style="width:100%;"></div>
-    <div id="scan-status" class="muted" style="margin-top:10px;">Point the camera at the barcode on the packaging.</div>
-  </div>
-</div>
-
 <script>
-  let sb = null; // renamed from "supabase" — that name is now taken by the
-                 // library's own global object (window.supabase), and
-                 // redeclaring it crashes the whole script on load
+  let sb = null;
   let allRows = [];
   let drugsList = [];
-  let currentWho = null; // { staff_name, site_code, bin_number }
+  let currentWho = null;
   let selectedCondition = null;
   let selectedDisposition = null;
   let isUnidentified = false;
 
-  function configOk() {
-    return SUPABASE_URL && !SUPABASE_URL.startsWith("REPLACE_") &&
-           SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith("REPLACE_");
-  }
-  if (configOk()) {
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  } else {
-    document.getElementById('config-warning').style.display = 'block';
-  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // ---- Tabs ----
   function showTab(tab) {
     document.getElementById('tab-who').style.display = 'none';
     document.getElementById('tab-log').style.display = tab === 'log' ? 'block' : 'none';
@@ -415,51 +231,30 @@
     document.getElementById('tab-log').style.display = 'none';
     document.getElementById('tab-dash').style.display = 'none';
     document.getElementById('tab-who').style.display = 'block';
-    document.getElementById('tab-log-btn').classList.remove('active');
-    document.getElementById('tab-dash-btn').classList.remove('active');
   }
 
-  // ---- No pre-registration needed: name is free text (auto-suggested from
-  // past entries), site/bin are freely picked from the sites/bins tables.
-  // Nothing here restricts who can log to which bin — deliberately low
-  // friction, per the call to not bother with real access control.
-  let binsList = [];
-
   async function loadStaff() {
-    if (!sb) return;
-    const { data, error } = await sb.from('medication_returns').select('staff_name').limit(500);
-    if (error) { console.error(error); return; }
-    const names = [...new Set(data.map(d => d.staff_name).filter(Boolean))].sort();
-    const dl = document.getElementById('staff-list');
-    dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
+    const { data } = await sb.from('medication_returns').select('staff_name').limit(500);
+    const names = [...new Set((data||[]).map(d => d.staff_name).filter(Boolean))].sort();
+    document.getElementById('staff-list').innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
   }
 
   async function loadSitesAndBins() {
-    if (!sb) return;
     const [sitesRes, binsRes] = await Promise.all([
       sb.from('sites').select('*').order('code'),
       sb.from('bins').select('*').order('bin_number')
     ]);
-    if (sitesRes.error) { console.error(sitesRes.error); return; }
-    if (binsRes.error) { console.error(binsRes.error); return; }
-    binsList = binsRes.data;
-    const siteSel = document.getElementById('who-site');
-    siteSel.innerHTML = '<option value="">Select…</option>' +
-      sitesRes.data.map(s => `<option value="${s.code}">${escapeHtml(s.name)} (${s.code})</option>`).join('');
+    binsList = binsRes.data || [];
+    document.getElementById('who-site').innerHTML = '<option value="">Select…</option>' +
+      (sitesRes.data||[]).map(s => `<option value="${s.code}">${escapeHtml(s.name)}</option>`).join('');
   }
 
   document.getElementById('who-site').addEventListener('change', (e) => {
-    const site = e.target.value;
-    const binSel = document.getElementById('who-bin');
-    const matches = binsList.filter(b => b.site_code === site);
-    binSel.innerHTML = matches.length
-      ? matches.map(b => `<option value="${b.bin_number}">Bin ${b.bin_number}${b.label ? ' — ' + escapeHtml(b.label) : ''}</option>`).join('')
-      : '<option value="">No bins found for this site</option>';
+    const matches = binsList.filter(b => b.site_code === e.target.value);
+    document.getElementById('who-bin').innerHTML = matches.map(b => `<option value="${b.bin_number}">Bin ${b.bin_number}</option>`).join('');
   });
 
   function todayStr() {
-    // Local-timezone YYYY-MM-DD, not UTC — avoids the "shows yesterday
-    // after midnight" bug that new Date().toISOString() has.
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
@@ -471,179 +266,28 @@
     const collection_date = document.getElementById('who-date').value || todayStr();
     if (!staff || !site_code || !bin_number) { alert('Enter your name and pick a site and bin.'); return; }
     currentWho = { staff_name: staff, site_code, bin_number: parseInt(bin_number), collection_date };
-    // Only identity is remembered across visits — the date always defaults
-    // fresh to today on the next visit rather than staying stuck on an old date.
-    try { localStorage.setItem('wastage_who', JSON.stringify({ staff_name: staff, site_code, bin_number: parseInt(bin_number) })); } catch(e) {}
-    document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number} · ${collection_date}`;
-    document.getElementById('who-display').textContent = `${staff} — ${site_code} Bin ${bin_number} (${collection_date})`;
+    document.getElementById('who-header').textContent = `${staff} · ${site_code}-${bin_number}`;
+    document.getElementById('who-display').textContent = `${staff} — ${site_code} Bin ${bin_number}`;
     showTab('log');
   }
 
-  function restoreWho() {
-    document.getElementById('who-date').value = todayStr();
-    try {
-      const saved = localStorage.getItem('wastage_who');
-      if (saved) {
-        const identity = JSON.parse(saved);
-        currentWho = { ...identity, collection_date: todayStr() };
-        document.getElementById('who-header').textContent = `${currentWho.staff_name} · ${currentWho.site_code}-${currentWho.bin_number} · ${currentWho.collection_date}`;
-        document.getElementById('who-display').textContent = `${currentWho.staff_name} — ${currentWho.site_code} Bin ${currentWho.bin_number} (${currentWho.collection_date})`;
-        document.getElementById('who-staff').value = identity.staff_name;
-      }
-    } catch(e) {}
-  }
-
-  // ---- Load drugs master list ----
-  // Brand name is the primary search field (staff usually recognize the
-  // brand on the packaging before the generic name) — the datalist shows
-  // "Brand (Generic)" where a brand is on file, and falls back to showing
-  // the generic label for drugs that don't have one, so search still works
-  // either way.
   function brandOptionLabel(d) {
     const genericLabel = `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}`;
     return d.brand_name ? `${d.brand_name} (${d.drug_name})` : genericLabel;
   }
+
   async function loadDrugs() {
-    if (!sb) return;
-    const { data, error } = await sb.from('drugs').select('*').order('drug_name');
-    if (error) { console.error(error); return; }
-    drugsList = data;
-    const dl = document.getElementById('brand-list');
-    dl.innerHTML = data.map(d => `<option value="${escapeHtml(brandOptionLabel(d))}">`).join('');
+    const { data } = await sb.from('drugs').select('*').order('drug_name');
+    drugsList = data || [];
+    document.getElementById('brand-list').innerHTML = drugsList.map(d => `<option value="${escapeHtml(brandOptionLabel(d))}">`).join('');
   }
 
-  // ---- Unit select + "remember last unit used per drug" ----
-  // The drugs master list has a default unit, but staff sometimes correct
-  // it for a specific drug (e.g. loose blister vs. full strip) — once
-  // that's happened, remember it locally so the next entry of that same
-  // drug defaults to what was actually last used, not just the master
-  // default. Still fully editable every time.
-  function lastUnits() {
-    try { return JSON.parse(localStorage.getItem('wastage_last_units') || '{}'); } catch(e) { return {}; }
-  }
-  function rememberUnit(drugKey, unit) {
-    if (!drugKey) return;
-    try {
-      const m = lastUnits();
-      m[drugKey] = unit;
-      localStorage.setItem('wastage_last_units', JSON.stringify(m));
-    } catch(e) {}
-  }
-  function drugKeyOf(match) { return match ? `${match.drug_name}|${match.strength_form || ''}` : null; }
-
-  function setUnit(unitValue) {
-    const sel = document.getElementById('unit');
-    const otherInput = document.getElementById('unit_other');
-    const known = [...sel.options].some(o => o.value === unitValue);
-    if (known) {
-      sel.value = unitValue;
-      otherInput.style.display = 'none';
-    } else if (unitValue) {
-      sel.value = '__other__';
-      otherInput.value = unitValue;
-      otherInput.style.display = 'block';
-    }
-  }
-  function getUnit() {
-    const sel = document.getElementById('unit');
-    return sel.value === '__other__' ? document.getElementById('unit_other').value.trim() : sel.value;
-  }
-  document.getElementById('unit').addEventListener('change', (e) => {
-    document.getElementById('unit_other').style.display = e.target.value === '__other__' ? 'block' : 'none';
-  });
-
-  // Shared by brand-search selection, barcode scan, and voice dictation —
-  // one place that fills in generic name/unit/cost whenever a drug is
-  // matched. Brand name is left alone if the match has none on file, so it
-  // doesn't blank out whatever the user already typed there.
   function applyDrugMatch(match) {
     if (!match) return;
     const label = `${match.drug_name}${match.strength_form ? ' — ' + match.strength_form : ''}`;
     document.getElementById('drug_search').value = label;
-    const remembered = lastUnits()[drugKeyOf(match)];
-    setUnit(remembered || match.unit || 'unit');
     document.getElementById('unit_cost').value = match.unit_cost ?? '';
     if (match.brand_name) document.getElementById('brand_search').value = match.brand_name;
-    document.getElementById('mal_registration_no').value = match.mal_registration_no || '';
-  }
-
-  // ---- Photo (documentation only — no analysis, no auto-fill) ----
-  let selectedPhotoFile = null;
-  document.getElementById('photo_input').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) { clearPhoto(); return; }
-    selectedPhotoFile = file;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      document.getElementById('photo-preview-img').src = ev.target.result;
-      document.getElementById('photo-preview').style.display = 'block';
-    };
-    reader.readAsDataURL(file);
-  });
-  function clearPhoto() {
-    selectedPhotoFile = null;
-    document.getElementById('photo_input').value = '';
-    document.getElementById('photo-preview').style.display = 'none';
-    document.getElementById('photo-preview-img').src = '';
-  }
-
-  // ---- Barcode scanning ----
-  // Uses the free html5-qrcode library (camera-only, no external lookup
-  // service) to read a barcode/QR code, then matches it against the
-  // `barcode` column on your drugs master list. Codes that aren't in your
-  // list are shown as-is so staff can search manually — scanning never
-  // blocks entry, it's purely a shortcut when it works.
-  let html5QrCode = null;
-
-  if (!window.Html5Qrcode) {
-    const scanBtnEl = document.getElementById('scan-btn');
-    if (scanBtnEl) { scanBtnEl.disabled = true; scanBtnEl.textContent = '📷 Barcode scanning unavailable in this browser'; }
-  }
-
-  function openScanner() {
-    if (!window.Html5Qrcode) { alert('Barcode scanning is not supported in this browser.'); return; }
-    document.getElementById('scan-modal').style.display = 'block';
-    document.getElementById('scan-status').textContent = 'Starting camera…';
-    html5QrCode = new Html5Qrcode('qr-reader');
-
-    let formatsToSupport;
-    try {
-      formatsToSupport = [
-        Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODABAR,
-        Html5QrcodeSupportedFormats.ITF
-      ];
-    } catch (e) { formatsToSupport = undefined; } // fall back to library default (QR-only) if this build's API differs
-
-    const config = { fps: 10, qrbox: 250 };
-    if (formatsToSupport) config.formatsToSupport = formatsToSupport;
-
-    html5QrCode.start({ facingMode: 'environment' }, config, onScanSuccess, () => {})
-      .then(() => { document.getElementById('scan-status').textContent = 'Point the camera at the barcode on the packaging.'; })
-      .catch(err => {
-        document.getElementById('scan-status').textContent = 'Could not access camera: ' + err + '. Close this and search/type the drug manually instead.';
-      });
-  }
-
-  function closeScanner() {
-    if (html5QrCode) {
-      html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-    }
-    document.getElementById('scan-modal').style.display = 'none';
-  }
-
-  function onScanSuccess(decodedText) {
-    const match = drugsList.find(d => d.barcode && d.barcode === decodedText);
-    if (match) {
-      applyDrugMatch(match);
-      document.getElementById('scan-status').textContent = `✓ Matched: ${match.drug_name}. Closing…`;
-      setTimeout(closeScanner, 900);
-    } else {
-      document.getElementById('scan-status').textContent =
-        `Scanned "${decodedText}" — not in your drug list yet. Close this and search/type the drug manually, or add this barcode to the drugs table later so it's recognized next time.`;
-    }
   }
 
   document.getElementById('brand_search').addEventListener('change', (e) => {
@@ -654,25 +298,16 @@
 
   function toggleUnidentified() {
     isUnidentified = !isUnidentified;
-    const btn = document.getElementById('unident-toggle');
-    btn.classList.toggle('active', isUnidentified);
-    btn.textContent = isUnidentified ? '✓ Logging as unidentified/mixed — tap to undo' : "Can't identify this item — log as unidentified/mixed";
-    ['brand_search', 'drug_search'].forEach(id => {
-      const el = document.getElementById(id);
-      el.disabled = isUnidentified;
-      el.style.opacity = isUnidentified ? 0.5 : 1;
-    });
+    document.getElementById('unident-toggle').classList.toggle('active', isUnidentified);
     document.getElementById('weight-row').style.display = isUnidentified ? 'block' : 'none';
   }
 
-  // ---- Chip selectors ----
+  // CHIP SELECTORS
   function setupChips(groupId, setter) {
     document.getElementById(groupId).addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
-      [...document.getElementById(groupId).children].forEach(c => c.classList.remove('selected'));
-      chip.classList.add('selected');
-      setter(chip.dataset.value);
+      selectChip(groupId, chip.dataset.value);
     });
   }
   setupChips('condition-chips', v => selectedCondition = v);
@@ -686,587 +321,205 @@
       chip.classList.add('selected');
       if (groupId === 'condition-chips') selectedCondition = value;
       if (groupId === 'disposition-chips') selectedDisposition = value;
-      return true;
     }
-    return false;
   }
 
-  // ---- Voice dictation: one mic per field ----
-  // Every voice-able field (drug, quantity, condition, disposition) has its
-  // own 🎤 button right next to it. Tap it: the app asks that one question
-  // out loud, listens, and fills just that field — no multi-step chain, no
-  // mode picker. This exists because the old single "start the whole flow"
-  // button was unreliable about actually opening the mic on some devices —
-  // starting recognition directly inside each tap's own click handler (the
-  // most gesture-compliant way to call the Web Speech API) is far more
-  // dependable than chaining it behind a "the question finished speaking"
-  // callback. Uses the browser's free built-in speech-to-text and speech
-  // synthesis — not an AI model; each tap only recognizes ONE fixed type of
-  // answer (a drug name, a number, a condition word, a disposition word).
-  let recognition = null;
-  let isListening = false;
-  let activeFieldKey = null;
+  // --- NEW SMART DICTATION ENGINE (WHISPER + GPT-4o-mini) ---
+  let smartRecorder = null;
+  let smartAudioChunks = [];
+  let isSmartRecording = false;
 
-  const synth = window.speechSynthesis || null;
-  let currentUtterance = null; // kept as a live reference — Chrome can silently
-  // garbage-collect a SpeechSynthesisUtterance mid-speech if nothing holds a
-  // reference to it, which then means onend/onerror never fire. Known real
-  // Chrome bug, not theoretical — but no longer matters much here since
-  // starting the mic no longer waits on speech finishing (see below).
-
-  // Pick the most natural-sounding available voice instead of the default
-  // robotic OS voice. Browsers load voices asynchronously, so this is
-  // re-run whenever the list changes, not just once at page load.
-  let preferredVoice = null;
-  function pickVoice() {
-    if (!synth) return;
-    const voices = synth.getVoices();
-    if (!voices.length) return;
-    preferredVoice =
-      voices.find(v => /^en/i.test(v.lang) && /Google/i.test(v.name)) ||   // Chrome's network voices — the most natural
-      voices.find(v => /^en/i.test(v.lang) && !v.localService) ||          // any non-robotic network voice
-      voices.find(v => /^en/i.test(v.lang)) ||
-      voices[0];
-  }
-  if (synth) {
-    pickVoice();
-    synth.onvoiceschanged = pickVoice;
-  }
-
-  // Self-managed "is the question still being spoken" flag — NOT the
-  // browser's own `synth.speaking` property, which has a known real bug on
-  // some Chrome builds where it can get stuck permanently `true` even after
-  // speech has actually finished. If that happens and onresult below were
-  // gated on `synth.speaking` directly, EVERY recognition result would be
-  // silently discarded forever — the mic would genuinely be listening and
-  // capturing speech, but the app would look like it wasn't, which matches
-  // "it reads to me but doesn't listen" exactly. This flag always has a
-  // timeout fallback so it can never get stuck.
-  let isSpeaking = false;
-  function speak(text) {
-    // Fire-and-forget — plays alongside listening, doesn't gate it. See
-    // dictateField() for why: waiting for speech to finish before starting
-    // the mic was the reason the mic sometimes never started at all.
-    if (!synth) return;
-    try {
-      synth.cancel();
-      isSpeaking = true;
-      currentUtterance = new SpeechSynthesisUtterance(text);
-      currentUtterance.rate = 1.02;
-      if (preferredVoice) currentUtterance.voice = preferredVoice;
-      currentUtterance.onend = () => { isSpeaking = false; };
-      currentUtterance.onerror = () => { isSpeaking = false; };
-      synth.speak(currentUtterance);
-      setTimeout(() => { isSpeaking = false; }, Math.max(2500, text.length * 90));
-    } catch (err) { isSpeaking = false; }
-  }
-
-  const FIELD_CONFIG = {
-    brand: { question: 'What\'s the brand name?' },
-    quantity: { question: 'How many? Just say the number.' },
-    condition: { question: 'What\'s the condition — sealed, opened, expired, or damaged?' },
-    disposition: { question: 'What should happen to it — restock, destroy, redistribute, or pending?' }
-  };
-
-  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognitionAPI) {
-    ['mic-brand', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-    document.getElementById('dictate-unsupported').style.display = 'block';
-  } else {
-    recognition = new SpeechRecognitionAPI();
-    recognition.continuous = false;
-    recognition.interimResults = true; // lets us show live text as it's heard, so staff can see the mic is actually working
-    recognition.lang = 'en-MY'; // falls back gracefully in browsers that don't support this locale
-
-    recognition.onstart = () => {
-      isListening = true;
-      setFieldMicUI(activeFieldKey, true);
-      showLiveTranscript('…');
-    };
-    recognition.onresult = (e) => {
-      // Ignore audio picked up while the question is still being read out
-      // loud — otherwise the app can hear its own voice as the answer.
-      if (isSpeaking) return;
-      let interim = '', final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript;
-        else interim += e.results[i][0].transcript;
-      }
-      if (interim) showLiveTranscript(interim);
-      if (final) { showLiveTranscript(final); handleFieldResult(final); }
-    };
-    recognition.onerror = (e) => {
-      setDictateStatus(`Mic error (${e.error}). Tap the 🎤 to try again.`);
-      hideLiveTranscript();
-      stopListeningUI();
-    };
-    recognition.onend = () => { stopListeningUI(); };
-
-    // Tapping directly into a field while its mic is listening always wins
-    // — stop and let the manual edit stand.
-    ['brand_search', 'drug_search', 'quantity', 'estimated_weight_g'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('focus', () => { if (isListening) recognition.stop(); });
-    });
-    document.getElementById('condition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
-    document.getElementById('disposition-chips').addEventListener('click', () => { if (isListening) recognition.stop(); });
-  }
-
-  function setFieldMicUI(fieldKey, on) {
-    ['mic-brand', 'mic-quantity', 'mic-condition', 'mic-disposition'].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const isThis = id === `mic-${fieldKey}`;
-      el.classList.toggle('listening', on && isThis);
-      el.textContent = on && isThis ? '🔴' : '🎤';
-    });
-  }
-
-  function stopListeningUI() {
-    isListening = false;
-    setFieldMicUI(activeFieldKey, false);
-    hideLiveTranscript();
-  }
-
-  function dictateField(fieldKey) {
-    if (!recognition) return;
-    if (isListening && activeFieldKey === fieldKey) { recognition.stop(); return; } // tap again to cancel
-    if (isListening) recognition.stop(); // switch fields
-    if (typeof notesListening !== 'undefined' && notesListening && notesRecognition) { notesListening = false; notesRecognition.stop(); } // don't run both mics at once
-    activeFieldKey = fieldKey;
-    const cfg = FIELD_CONFIG[fieldKey];
-    setDictateStatus(`🔊 ${cfg.question}`);
-    try {
-      recognition.start(); // synchronous, inside the tap's own click handler — the most gesture-compliant way to open the mic
-    } catch (err) {
-      setDictateStatus(`Mic didn't start (${err.message || err.name || 'unknown error'}). Tap the 🎤 again.`);
+  async function toggleSmartDictation() {
+    const btn = document.getElementById('smart-record-btn');
+    const status = document.getElementById('smart-status');
+    const apiKey = document.getElementById('openai-key').value.trim();
+    
+    if (!apiKey) {
+      alert("Please enter your OpenAI API key first.");
       return;
     }
-    speak(cfg.question); // plays alongside listening, doesn't block it
-  }
 
-  function showLiveTranscript(text) {
-    const el = document.getElementById('voice-live-transcript');
-    if (!el) return;
-    el.textContent = `Hearing: ${text}`;
-    el.style.display = 'block';
-  }
-
-  function hideLiveTranscript() {
-    const el = document.getElementById('voice-live-transcript');
-    if (el) el.style.display = 'none';
-  }
-
-  function setDictateStatus(text) {
-    const el = document.getElementById('dictate-status');
-    el.textContent = text;
-    el.style.display = text ? 'block' : 'none';
-  }
-
-  function levenshtein(a, b) {
-    const m = [];
-    for (let i = 0; i <= b.length; i++) m[i] = [i];
-    for (let j = 0; j <= a.length; j++) m[0][j] = j;
-    for (let i = 1; i <= b.length; i++) {
-      for (let j = 1; j <= a.length; j++) {
-        m[i][j] = b.charAt(i-1) === a.charAt(j-1)
-          ? m[i-1][j-1]
-          : Math.min(m[i-1][j-1] + 1, m[i][j-1] + 1, m[i-1][j] + 1);
+    if (!isSmartRecording) {
+      // START RECORDING
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        smartRecorder = new MediaRecorder(stream);
+        smartAudioChunks = [];
+        
+        smartRecorder.ondataavailable = e => smartAudioChunks.push(e.data);
+        smartRecorder.onstop = async () => {
+           const audioBlob = new Blob(smartAudioChunks, { type: 'audio/webm' });
+           await processSmartDictation(audioBlob, apiKey, status, btn);
+        };
+        
+        smartRecorder.start();
+        isSmartRecording = true;
+        btn.innerHTML = '⏹️ Stop & Extract Data';
+        btn.style.background = '#dc2626';
+        status.style.display = 'block';
+        status.className = 'msg info';
+        status.textContent = 'Listening... (e.g. "Amlodipine, 14 tablets, expired, to be destroyed")';
+      } catch(err) {
+        alert("Microphone error: " + err);
       }
+    } else {
+      // STOP RECORDING
+      smartRecorder.stop();
+      isSmartRecording = false;
+      btn.innerHTML = '⏳ Processing AI...';
+      btn.style.background = '#6b7280';
+      btn.disabled = true;
     }
-    return m[b.length][a.length];
   }
 
-  function nameMatchScore(t, name) {
-    if (!name) return 0;
-    name = name.toLowerCase();
-    if (t.includes(name)) return name.length * 2; // strong signal: exact substring match
-    // fuzzy: compare each transcript word against the name
-    let score = 0;
-    t.split(/\s+/).forEach(w => {
-      if (w.length < 4) return;
-      const dist = levenshtein(w, name.slice(0, w.length + 2));
-      const sim = 1 - dist / Math.max(w.length, name.length);
-      if (sim > 0.6) score = Math.max(score, sim * name.length);
-    });
-    return score;
-  }
+  async function processSmartDictation(audioBlob, apiKey, status, btn) {
+    status.className = 'msg info';
+    status.textContent = 'Transcribing audio via Whisper...';
 
-  // Matches against brand name first (that's what's usually asked/searched
-  // now), falling back to the generic name — so it still works if someone
-  // says the generic instead, or a drug has no brand on file.
-  function bestDrugMatch(transcript) {
-    const t = transcript.toLowerCase();
-    let best = null, bestScore = 0;
-    drugsList.forEach(d => {
-      const score = Math.max(nameMatchScore(t, d.brand_name), nameMatchScore(t, d.drug_name));
-      if (score > bestScore) { bestScore = score; best = d; }
-    });
-    return bestScore > 2 ? best : null;
-  }
+    // 1. WHISPER TRANSCRIPTION
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.webm');
+    formData.append('model', 'whisper-1');
 
-  function logVoiceLine(stepKey, transcript) {
-    // Always keep the raw transcript as text, in Notes — a safety net so
-    // nothing said is lost even where the parser below guessed wrong.
-    const notesEl = document.getElementById('notes');
-    const voiceLine = `[Voice:${stepKey}] ${transcript}`;
-    notesEl.value = notesEl.value ? `${notesEl.value}\n${voiceLine}` : voiceLine;
-    document.getElementById('optional-details').open = true; // reveal it so staff can see it landed there
-  }
-
-  function handleFieldResult(transcript) {
-    const fieldKey = activeFieldKey;
-    const t = transcript.toLowerCase();
-    logVoiceLine(fieldKey, transcript);
-    let heardSummary = 'not recognized — check/edit this field manually';
-
-    if (fieldKey === 'brand') {
-      if (/unidentif|can'?t (tell|identify)|unknown drug|loose (pill|tablet)|mixed lot/.test(t)) {
-        if (!isUnidentified) toggleUnidentified();
-        heardSummary = 'marked unidentified';
-      } else {
-        const match = bestDrugMatch(t);
-        if (match) { applyDrugMatch(match); heardSummary = match.brand_name || match.drug_name; }
-        else { document.getElementById('brand_search').value = transcript; heardSummary = `"${transcript}" (no match — typed as-is, edit if wrong)`; }
-      }
-    } else if (fieldKey === 'quantity') {
-      let qtyMatch = t.match(/(\d+(\.\d+)?)\s*(tablet|capsule|vial|bottle|piece|pill|unit|strip|sachet)s?\b/);
-      if (!qtyMatch) {
-        const numbers = [...t.matchAll(/(\d+(\.\d+)?)\s*(mg|mcg|g|ml)?\b/g)];
-        const bare = numbers.find(n => !n[3]);
-        if (bare) qtyMatch = bare;
-      }
-      if (qtyMatch) { document.getElementById('quantity').value = qtyMatch[1]; heardSummary = qtyMatch[1]; }
-    } else if (fieldKey === 'condition') {
-      // "sealed/unopened" checked BEFORE "opened/partial" — "unopened" itself
-      // contains "open" and would otherwise be misread as opened.
-      if (/expir/.test(t)) { selectChip('condition-chips', 'Expired'); heardSummary = 'Expired'; }
-      else if (/damag/.test(t)) { selectChip('condition-chips', 'Damaged/unusable'); heardSummary = 'Damaged/unusable'; }
-      else if (/seal|unopen/.test(t)) { selectChip('condition-chips', 'Sealed/unopened'); heardSummary = 'Sealed/unopened'; }
-      else if (/\bopen(ed)?\b|partial/.test(t)) { selectChip('condition-chips', 'Opened/partially used'); heardSummary = 'Opened/partially used'; }
-    } else if (fieldKey === 'disposition') {
-      if (/restock/.test(t)) { selectChip('disposition-chips', 'Restocked to pharmacy'); heardSummary = 'Restocked to pharmacy'; }
-      else if (/destroy|discard/.test(t)) { selectChip('disposition-chips', 'Destroyed/discarded'); heardSummary = 'Destroyed/discarded'; }
-      else if (/redistribut|donat/.test(t)) { selectChip('disposition-chips', 'Redistributed (e.g. donation programme)'); heardSummary = 'Redistributed'; }
-      else if (/pending/.test(t)) { selectChip('disposition-chips', 'Pending decision'); heardSummary = 'Pending decision'; }
+    let transcript = "";
+    try {
+      const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: formData
+      });
+      const data = await res.json();
+      if(data.error) throw data.error;
+      transcript = data.text;
+      
+      // Save transcript to notes automatically
+      document.getElementById('notes').value = "Voice Transcript: " + transcript;
+      status.textContent = `Heard: "${transcript}". Extracting fields...`;
+    } catch(e) {
+      status.className = 'msg err';
+      status.textContent = "Transcription failed: " + (e.message || e);
+      resetBtn(btn); return;
     }
 
-    setDictateStatus(`Heard: "${transcript}" → ${heardSummary}.`);
-  }
+    // 2. GPT DATA EXTRACTION
+    try {
+      const prompt = `Extract medication return details from this transcript.
+      Return ONLY a valid JSON object with these EXACT keys:
+      - "brand_search": string (the drug or brand name mentioned)
+      - "quantity": number (only the numeric value)
+      - "condition": string (MUST be one of: "Sealed/unopened", "Opened/partially used", "Expired", "Damaged/unusable", "Unknown")
+      - "disposition": string (MUST be one of: "Restocked to pharmacy", "Destroyed/discarded", "Redistributed (e.g. donation programme)", "Pending decision")
 
-  // ---- Free-text dictation for Notes ----
-  // Separate, independent recognizer from the guided step flow above — this
-  // one just transcribes whatever is said, continuously, straight into the
-  // Notes textarea, for open-ended remarks that don't fit a fixed field.
-  // Same free browser speech-to-text, no AI parsing involved.
-  let notesRecognition = null;
-  let notesListening = false;
+      Transcript: "${transcript}"`;
 
-  if (!SpeechRecognitionAPI) {
-    const btn = document.getElementById('notes-dictate-btn');
-    if (btn) btn.style.display = 'none';
-    const msgEl = document.getElementById('notes-dictate-unsupported');
-    if (msgEl) msgEl.style.display = 'block';
-  } else {
-    notesRecognition = new SpeechRecognitionAPI();
-    notesRecognition.continuous = true;
-    notesRecognition.interimResults = true; // shows live text so staff can see the mic is actually capturing
-    notesRecognition.lang = 'en-MY';
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{role: 'user', content: prompt}],
+          response_format: { type: "json_object" }
+        })
+      });
+      const data = await res.json();
+      if(data.error) throw data.error;
 
-    notesRecognition.onstart = () => { showNotesLiveTranscript('…'); };
-    notesRecognition.onresult = (e) => {
-      const notesEl = document.getElementById('notes');
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const said = e.results[i][0].transcript.trim();
-        if (!said) continue;
-        if (e.results[i].isFinal) {
-          notesEl.value = notesEl.value ? `${notesEl.value} ${said}` : said;
-        } else {
-          interim += (interim ? ' ' : '') + said;
-        }
+      const extracted = JSON.parse(data.choices[0].message.content);
+
+      // 3. AUTO-FILL THE FORM
+      if (extracted.brand_search) {
+        const brandInput = document.getElementById('brand_search');
+        brandInput.value = extracted.brand_search;
+        // Trigger Claude's change event to fetch generic drug & cost
+        brandInput.dispatchEvent(new Event('change'));
       }
-      showNotesLiveTranscript(interim || '…');
-    };
-    notesRecognition.onerror = () => { stopNotesDictationUI(); };
-    notesRecognition.onend = () => {
-      // continuous mode can still end on its own (silence timeout, etc.) —
-      // restart automatically if the user hasn't tapped stop yet
-      if (notesListening) { try { notesRecognition.start(); } catch (err) { stopNotesDictationUI(); } }
-      else { hideNotesLiveTranscript(); }
-    };
+      if (extracted.quantity) document.getElementById('quantity').value = extracted.quantity;
+      if (extracted.condition) selectChip('condition-chips', extracted.condition);
+      if (extracted.disposition) selectChip('disposition-chips', extracted.disposition);
 
-    // Interrupt cleanly if the guided item-flow mic is started, and vice versa.
-    document.getElementById('notes').addEventListener('focus', () => {
-      if (isListening && recognition) recognition.stop();
-    });
+      status.className = 'msg ok';
+      status.textContent = "✓ Extraction complete! Please review the fields and tap Save.";
+    } catch(e) {
+      status.className = 'msg err';
+      status.textContent = "Data extraction failed: " + (e.message || e);
+    }
+    resetBtn(btn);
   }
 
-  function toggleNotesDictation() {
-    if (!notesRecognition) return;
-    if (notesListening) { notesListening = false; notesRecognition.stop(); return; }
-    if (isListening && recognition) recognition.stop(); // don't run both mics at once
-    notesListening = true;
-    document.getElementById('notes-dictate-btn').textContent = '🔴 Stop';
-    try { notesRecognition.start(); } catch (err) { stopNotesDictationUI(); }
+  function resetBtn(btn) {
+    btn.disabled = false;
+    btn.innerHTML = '🎤 Tap to Speak Item';
+    btn.style.background = '#4f46e5';
   }
+  // --- END SMART DICTATION ENGINE ---
 
-  function stopNotesDictationUI() {
-    notesListening = false;
-    const btn = document.getElementById('notes-dictate-btn');
-    if (btn) btn.textContent = '🎤 Dictate';
-    hideNotesLiveTranscript();
-  }
-
-  function showNotesLiveTranscript(text) {
-    const el = document.getElementById('notes-live-transcript');
-    if (!el) return;
-    el.textContent = `Hearing: ${text}`;
-    el.style.display = 'block';
-  }
-
-  function hideNotesLiveTranscript() {
-    const el = document.getElementById('notes-live-transcript');
-    if (el) el.style.display = 'none';
-  }
-
-  // ---- Label toggle ----
-  document.getElementById('label_present').addEventListener('change', (e) => {
-    document.getElementById('label-fields').style.display = e.target.checked ? 'block' : 'none';
-  });
-
-  // ---- Submit ----
+  // SUBMIT TO SUPABASE
   document.getElementById('return-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const msg = document.getElementById('form-msg');
     const btn = document.getElementById('submit-btn');
-    msg.className = 'msg'; msg.textContent = '';
-
-    if (!sb) { msg.className = 'msg err'; msg.textContent = 'App is not configured yet.'; return; }
-    if (!currentWho) { msg.className = 'msg err'; msg.textContent = 'Please sign in first (tap the header).'; showWhoScreen(); return; }
-    if (!selectedCondition) { msg.className = 'msg err'; msg.textContent = 'Pick a condition.'; return; }
-    if (!selectedDisposition) { msg.className = 'msg err'; msg.textContent = 'Pick a disposition.'; return; }
-
-    const qty = val('quantity') ? parseFloat(val('quantity')) : null;
-    const weight = val('estimated_weight_g') ? parseFloat(val('estimated_weight_g')) : null;
-    if (!isUnidentified && !qty) { msg.className = 'msg err'; msg.textContent = 'Enter a quantity.'; return; }
-    if (isUnidentified && !qty && !weight) { msg.className = 'msg err'; msg.textContent = 'Enter a quantity or an estimated weight.'; return; }
-
-    const drugVal = val('drug_search');
-    const match = drugsList.find(d => `${d.drug_name}${d.strength_form ? ' — ' + d.strength_form : ''}` === drugVal);
-    const labelPresent = document.getElementById('label_present').checked;
-
+    const msg = document.getElementById('form-msg');
+    
+    if (!currentWho) { alert('Sign in first.'); return; }
+    if (!selectedCondition || !selectedDisposition) { alert('Pick condition and disposition.'); return; }
+    
     btn.disabled = true; btn.textContent = 'Saving…';
-
-    // Photo upload (if one was taken) happens first, but never blocks the
-    // save — if it fails, the item still saves, just without the photo.
-    let photoPath = null;
-    let photoWarning = '';
-    if (selectedPhotoFile) {
-      btn.textContent = 'Uploading photo…';
-      const ext = (selectedPhotoFile.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${currentWho.site_code}-${currentWho.bin_number}/${currentWho.collection_date}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadError } = await sb.storage.from('return-photos').upload(path, selectedPhotoFile);
-      if (uploadError) {
-        photoWarning = ' (photo upload failed: ' + uploadError.message + ' — item saved without it)';
-      } else {
-        photoPath = path;
-      }
-      btn.textContent = 'Saving…';
-    }
-
+    
+    const qty = document.getElementById('quantity').value;
     const payload = {
       staff_name: currentWho.staff_name,
       site_code: currentWho.site_code,
       bin_number: currentWho.bin_number,
       collection_date: currentWho.collection_date,
       is_unidentified: isUnidentified,
-      drug_name: isUnidentified ? null : (match ? match.drug_name : (drugVal || null)),
-      brand_name: isUnidentified ? null : (val('brand_search') || null),
-      strength_form: isUnidentified ? null : (match ? match.strength_form : null),
-      category: isUnidentified ? null : (match ? match.category : null),
-      quantity: qty,
-      estimated_weight_g: weight,
-      unit: getUnit() || 'unit',
-      unit_cost: val('unit_cost') ? parseFloat(val('unit_cost')) : (match ? match.unit_cost : null),
-      batch_no: val('batch_no') || null,
-      expiry_date: val('expiry_date') || null,
-      mal_registration_no: val('mal_registration_no') || null,
-      photo_path: photoPath,
+      brand_name: document.getElementById('brand_search').value,
+      drug_name: document.getElementById('drug_search').value,
+      quantity: qty ? parseFloat(qty) : null,
       condition: selectedCondition,
       disposition: selectedDisposition,
-      label_present: labelPresent,
-      qty_dispensed_on_label: labelPresent && val('qty_dispensed_on_label') ? parseFloat(val('qty_dispensed_on_label')) : null,
-      date_dispensed_on_label: labelPresent && val('date_dispensed_on_label') ? val('date_dispensed_on_label') : null,
-      dispensing_unit_on_label: labelPresent ? (val('dispensing_unit_on_label') || null) : null,
-      reason: val('reason') || null,
-      notes: val('notes') || null
+      notes: document.getElementById('notes').value
     };
 
     const { error } = await sb.from('medication_returns').insert(payload);
     btn.disabled = false; btn.textContent = 'Save item';
 
     if (error) {
-      msg.className = 'msg err';
-      msg.textContent = 'Could not save: ' + error.message;
+      msg.className = 'msg err'; msg.textContent = 'Error: ' + error.message;
     } else {
-      if (!isUnidentified) rememberUnit(drugKeyOf(match) || `freetext|${payload.drug_name}`, payload.unit);
-      msg.className = photoWarning ? 'msg err' : 'msg ok';
-      msg.textContent = '✓ Saved. Ready for the next item.' + photoWarning;
-      resetItemFields();
+      msg.className = 'msg ok'; msg.textContent = '✓ Saved! Ready for next item.';
+      document.getElementById('brand_search').value = '';
+      document.getElementById('drug_search').value = '';
+      document.getElementById('quantity').value = '';
+      document.getElementById('notes').value = '';
+      [...document.getElementById('condition-chips').children].forEach(c => c.classList.remove('selected'));
+      [...document.getElementById('disposition-chips').children].forEach(c => c.classList.remove('selected'));
+      selectedCondition = null; selectedDisposition = null;
+      document.getElementById('smart-status').style.display = 'none';
     }
   });
 
-  function resetItemFields() {
-    document.getElementById('drug_search').value = '';
-    document.getElementById('brand_search').value = '';
-    document.getElementById('quantity').value = '';
-    document.getElementById('estimated_weight_g').value = '';
-    setUnit('unit');
-    document.getElementById('unit_other').value = '';
-    document.getElementById('unit_cost').value = '';
-    document.getElementById('batch_no').value = '';
-    document.getElementById('expiry_date').value = '';
-    document.getElementById('mal_registration_no').value = '';
-    clearPhoto();
-    document.getElementById('label_present').checked = false;
-    document.getElementById('label-fields').style.display = 'none';
-    document.getElementById('qty_dispensed_on_label').value = '';
-    document.getElementById('date_dispensed_on_label').value = '';
-    document.getElementById('dispensing_unit_on_label').value = '';
-    document.getElementById('reason').value = '';
-    document.getElementById('notes').value = '';
-    [...document.getElementById('condition-chips').children].forEach(c => c.classList.remove('selected'));
-    [...document.getElementById('disposition-chips').children].forEach(c => c.classList.remove('selected'));
-    selectedCondition = null; selectedDisposition = null;
-    if (isUnidentified) toggleUnidentified();
-    setDictateStatus('');
-    document.getElementById('optional-details').open = false;
-    document.getElementById('brand_search').focus();
-  }
-
-  function val(id) { return document.getElementById(id).value.trim(); }
-
-  // ---- Dashboard ----
+  // DASHBOARD
   async function loadDashboard() {
-    if (!sb) return;
-    const { data, error } = await sb.from('medication_returns').select('*').order('created_at', { ascending: false }).limit(5000);
-    if (error) { console.error(error); return; }
-    allRows = data;
-    renderDashboard(data);
-  }
-
-  function fmtMoney(n) { return n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-
-  function renderDashboard(rows) {
-    document.getElementById('stat-count').textContent = rows.length;
-    const totalQty = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
-    const totalCost = rows.reduce((s, r) => s + Number(r.total_cost || 0), 0);
-    document.getElementById('stat-qty').textContent = totalQty.toLocaleString();
-    document.getElementById('stat-cost').textContent = fmtMoney(totalCost);
-
-    const labeled = rows.filter(r => r.label_present);
-    document.getElementById('stat-labelpct').textContent = rows.length ? (labeled.length / rows.length * 100).toFixed(0) + '%' : '–';
-
-    const withQty = labeled.filter(r => r.qty_dispensed_on_label > 0 && r.quantity);
-    const rates = withQty.map(r => Number(r.quantity) / Number(r.qty_dispensed_on_label));
-    document.getElementById('stat-leftover').textContent = rates.length ? (rates.reduce((a,b)=>a+b,0)/rates.length*100).toFixed(0) + '%' : '–';
-
-    const withDate = labeled.filter(r => r.date_dispensed_on_label);
-    const days = withDate.map(r => Math.max(0, Math.round((new Date(r.collection_date) - new Date(r.date_dispensed_on_label)) / 86400000)));
-    document.getElementById('stat-days').textContent = days.length ? Math.round(days.reduce((a,b)=>a+b,0)/days.length) : '–';
-
-    renderGroupTable(rows.map(r => ({...r, drug_name: r.is_unidentified ? 'Unidentified/mixed' : (r.drug_name || 'Unspecified')})),
-      'drug_name', 'tbl-drugs', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.reduce((s,r)=>s+Number(r.quantity||0),0).toLocaleString()}</td>
-      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
-      (a,b) => b.cost - a.cost, 15);
-
-    renderGroupTable(rows, 'site_code', 'tbl-site', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.length}</td>
-      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
-      null, 20);
-
-    renderGroupTable(rows.map(r => ({...r, bin_label: `${r.site_code}-${r.bin_number}`})), 'bin_label', 'tbl-bin', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.length}</td>
-      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
-      null, 50);
-
-    const total = rows.length || 1;
-    renderGroupTable(rows, 'condition', 'tbl-condition', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.length}</td>
-      <td class="num-cell">${(group.length/total*100).toFixed(1)}%</td></tr>`,
-      null, 50);
-
-    renderGroupTable(rows.map(r => ({...r, reason: r.reason || 'Unknown/not stated'})), 'reason', 'tbl-reasons', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.length}</td>
-      <td class="num-cell">${(group.length/total*100).toFixed(1)}%</td></tr>`,
-      null, 50);
-
-    renderGroupTable(rows, 'disposition', 'tbl-disposition', (name, group) => `
-      <tr><td>${escapeHtml(name)}</td>
-      <td class="num-cell">${group.length}</td>
-      <td class="num-cell">${fmtMoney(group.reduce((s,r)=>s+Number(r.total_cost||0),0))}</td></tr>`,
-      null, 50);
-
-    const recentBody = document.getElementById('tbl-recent');
-    recentBody.innerHTML = rows.slice(0, 20).map(r => `
+    const { data } = await sb.from('medication_returns').select('*').order('created_at', { ascending: false }).limit(20);
+    const tbody = document.getElementById('tbl-recent');
+    tbody.innerHTML = (data||[]).map(r => `
       <tr>
-        <td>${new Date(r.collection_date || r.created_at).toLocaleDateString('en-MY')}</td>
+        <td>${new Date(r.collection_date || r.created_at).toLocaleDateString()}</td>
         <td>${escapeHtml(r.site_code)}-${r.bin_number}</td>
-        <td>${escapeHtml(r.is_unidentified ? 'Unidentified/mixed' : (r.drug_name || '–'))}</td>
-        <td class="num-cell">${r.quantity ?? (r.estimated_weight_g ? r.estimated_weight_g + 'g' : '–')}</td>
+        <td>${escapeHtml(r.brand_name || r.drug_name || '–')}</td>
+        <td class="num-cell">${r.quantity || '–'}</td>
         <td>${escapeHtml(r.condition)}</td>
       </tr>`).join('') || `<tr><td colspan="5" class="empty">No entries yet</td></tr>`;
-  }
-
-  function renderGroupTable(rows, key, tbodyId, rowHtmlFn, sortFn, limit) {
-    const groups = {};
-    rows.forEach(r => { const k = r[key] || 'Unspecified'; (groups[k] = groups[k] || []).push(r); });
-    let entries = Object.entries(groups).map(([name, group]) => ({ name, group, cost: group.reduce((s,r)=>s+Number(r.total_cost||0),0) }));
-    entries.sort(sortFn || ((a,b) => b.cost - a.cost));
-    entries = entries.slice(0, limit);
-    const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = entries.map(e => rowHtmlFn(e.name, e.group)).join('') || `<tr><td colspan="3" class="empty">No entries yet</td></tr>`;
   }
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   }
 
-  function exportCSV() {
-    if (!allRows.length) { alert('No data loaded yet — open the Dashboard tab first.'); return; }
-    const cols = Object.keys(allRows[0]);
-    const lines = [cols.join(',')];
-    allRows.forEach(r => {
-      lines.push(cols.map(c => {
-        let v = r[c] ?? '';
-        v = String(v).replace(/"/g, '""');
-        return /[",\n]/.test(v) ? `"${v}"` : v;
-      }).join(','));
-    });
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `medication_returns.csv`;
-    a.click();
-  }
-
-  // ---- Init ----
   (async function init() {
     await Promise.all([loadStaff(), loadDrugs(), loadSitesAndBins()]);
-    restoreWho();
-    if (currentWho) { showTab('log'); } else { showWhoScreen(); }
+    document.getElementById('who-date').value = todayStr();
+    showWhoScreen();
   })();
 </script>
-
 </body>
 </html>
